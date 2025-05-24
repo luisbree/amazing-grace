@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useRef, useCallback } from 'react';
@@ -66,13 +67,16 @@ export default function GeoMapperClient() {
         <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-3"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>
         <h1 className="text-2xl font-semibold">Geo Mapper</h1>
       </header>
-      <div className="flex flex-1 overflow-hidden p-4 gap-4">
-        <Card className="w-96 p-0 flex flex-col shadow-xl rounded-lg border border-border overflow-hidden">
-          <MapControls onAddLayer={addLayer} layers={layers} onToggleLayerVisibility={toggleLayerVisibility} />
-        </Card>
-        <main className="flex-1 relative rounded-lg overflow-hidden shadow-xl border border-border">
-          <MapView mapRef={mapRef} layers={layers} setMapInstance={setMapInstance} />
-        </main>
+      <div className="relative flex-1 overflow-hidden"> {/* Map container takes full space and allows absolute positioning for controls */}
+        <MapView mapRef={mapRef} layers={layers} setMapInstance={setMapInstance} />
+        
+        {/* Floating Controls Panel */}
+        <div className="absolute top-4 left-4 z-10 w-80"> {/* Reduced width */}
+          <Card className="p-0 flex flex-col shadow-xl rounded-lg border border-border bg-card max-h-[calc(100%-theme(spacing.8))] overflow-hidden"> 
+            {/* max-h ensures it doesn't overflow, spacing.8 provides 1rem top and 1rem bottom margin visually */}
+            <MapControls onAddLayer={addLayer} layers={layers} onToggleLayerVisibility={toggleLayerVisibility} />
+          </Card>
+        </div>
       </div>
       <Toaster />
     </div>
