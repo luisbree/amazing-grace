@@ -7,8 +7,9 @@ import type VectorLayer from 'ol/layer/Vector';
 import type VectorSource from 'ol/source/Vector';
 
 import MapView from '@/components/map-view';
-import MapControls from '@/components/map-controls'; // Keep import for later restoration
-import { Card } from '@/components/ui/card'; // Keep import for later restoration
+// MapControls and Card are not directly used in this extremely simplified debug version
+// import MapControls from '@/components/map-controls';
+// import { Card } from '@/components/ui/card';
 import { Toaster } from "@/components/ui/toaster";
 
 export interface MapLayer {
@@ -21,13 +22,9 @@ export interface MapLayer {
 export default function GeoMapperClient() {
   const [layers, setLayers] = useState<MapLayer[]>([]);
   const mapRef = useRef<OLMap | null>(null);
+  const mapAreaRef = useRef<HTMLDivElement>(null); // Keep for border and as context for absolute positioning
 
-  const [position, setPosition] = useState({ x: 16, y: 16 }); // Initial position for top/left
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef({ initialMouseX: 0, initialMouseY: 0, initialPanelX: 0, initialPanelY: 0 });
-  const draggablePanelRef = useRef<HTMLDivElement>(null);
-  const mapAreaRef = useRef<HTMLDivElement>(null);
-
+  // Layer and map instance logic remains
   const addLayer = useCallback((newLayer: MapLayer) => {
     setLayers(prevLayers => {
       const updatedLayers = [...prevLayers, newLayer];
@@ -64,62 +61,9 @@ export default function GeoMapperClient() {
     });
   }, [layers]);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (draggablePanelRef.current) {
-      setIsDragging(true);
-      // When using top/left for positioning, initialPanelX/Y are the current top/left values
-      dragStartRef.current = {
-        initialMouseX: e.clientX,
-        initialMouseY: e.clientY,
-        initialPanelX: position.x, 
-        initialPanelY: position.y, 
-      };
-      draggablePanelRef.current.classList.remove('cursor-grab');
-      draggablePanelRef.current.classList.add('cursor-grabbing');
-      e.preventDefault();
-    }
-  }, [position.x, position.y]);
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!draggablePanelRef.current || !mapAreaRef.current || !isDragging) return;
-
-      const dx = e.clientX - dragStartRef.current.initialMouseX;
-      const dy = e.clientY - dragStartRef.current.initialMouseY;
-
-      let newX = dragStartRef.current.initialPanelX + dx;
-      let newY = dragStartRef.current.initialPanelY + dy;
-      
-      const mapAreaRect = mapAreaRef.current.getBoundingClientRect();
-      // Using fixed panel dimensions for constraint calculation during this debug phase
-      const panelWidth = 200; 
-      const panelHeight = 100;
-      
-      newX = Math.max(0, Math.min(newX, mapAreaRect.width - panelWidth));
-      newY = Math.max(0, Math.min(newY, mapAreaRect.height - panelHeight));
-
-      setPosition({ x: newX, y: newY });
-    };
-
-    const handleMouseUp = () => {
-      if (!isDragging) return;
-      setIsDragging(false);
-      if (draggablePanelRef.current) {
-        draggablePanelRef.current.classList.remove('cursor-grabbing');
-        draggablePanelRef.current.classList.add('cursor-grab');
-      }
-    };
-
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-    }
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging]); // Only re-run if isDragging changes
+  // All dragging state, refs (draggablePanelRef), and event handlers (handleMouseDown, useEffect for mousemove/up)
+  // have been removed for this basic visibility test.
+  // The panel will be static.
 
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
@@ -127,24 +71,21 @@ export default function GeoMapperClient() {
         <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-3"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>
         <h1 className="text-2xl font-semibold">Geo Mapper</h1>
       </header>
-      {/* DEBUG: Added border to mapAreaRef to visualize its bounds */}
+      {/* mapAreaRef now has a green border to confirm its bounds and relative positioning context */}
       <div ref={mapAreaRef} className="relative flex-1 overflow-hidden border-2 border-green-500">
         <MapView mapRef={mapRef} layers={layers} setMapInstance={setMapInstance} />
         
-        {/* DEBUG: Drastically simplified panel for visibility test, using top/left for position */}
+        {/* Ultra-simplified panel for visibility test. No JS logic for position/drag. */}
         <div
-          ref={draggablePanelRef}
-          className="absolute z-50 cursor-grab bg-red-500 flex items-center justify-center" // Added flex for centering text
+          className="absolute z-[9999] bg-red-500 text-white font-bold flex items-center justify-center" // Extremely high z-index
           style={{
-            top: `${position.y}px`,
-            left: `${position.x}px`,
-            width: '200px',
-            height: '100px',
-            touchAction: 'none', 
+            top: '16px', // Hardcoded position from top
+            left: '16px', // Hardcoded position from left
+            width: '200px', // Hardcoded width
+            height: '100px', // Hardcoded height
           }}
-          onMouseDown={handleMouseDown}
         >
-           <p className="text-white font-bold">DEBUG PANEL</p>
+           PANEL TEST
         </div>
       </div>
       <Toaster />
