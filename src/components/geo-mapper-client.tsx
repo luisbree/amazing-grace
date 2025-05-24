@@ -22,11 +22,11 @@ export default function GeoMapperClient() {
   const [layers, setLayers] = useState<MapLayer[]>([]);
   const mapRef = useRef<OLMap | null>(null);
 
-  const [position, setPosition] = useState({ x: 16, y: 16 });
+  const [position, setPosition] = useState({ x: 16, y: 16 }); // Initial position
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ initialMouseX: 0, initialMouseY: 0, initialPanelX: 0, initialPanelY: 0 });
   const draggablePanelRef = useRef<HTMLDivElement>(null);
-  const mapAreaRef = useRef<HTMLDivElement>(null);
+  const mapAreaRef = useRef<HTMLDivElement>(null); // Ref for the map area to constrain dragging
 
   const addLayer = useCallback((newLayer: MapLayer) => {
     setLayers(prevLayers => {
@@ -56,17 +56,20 @@ export default function GeoMapperClient() {
   
   const setMapInstance = useCallback((mapInstance: OLMap) => {
     mapRef.current = mapInstance;
+    // Ensure layers are added to the new map instance if they were created before the map was ready
     layers.forEach(layer => {
       if (mapRef.current && layer.olLayer && !mapRef.current.getLayers().getArray().includes(layer.olLayer)) {
         mapRef.current.addLayer(layer.olLayer);
         layer.olLayer.setVisible(layer.visible);
       }
     });
-  }, [layers]);
+  }, [layers]); // layers dependency
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (draggablePanelRef.current) {
       setIsDragging(true);
+      // Record the mouse position relative to the viewport
+      // and the panel's current position (which is relative to its offsetParent, mapAreaRef)
       dragStartRef.current = {
         initialMouseX: e.clientX,
         initialMouseY: e.clientY,
@@ -77,22 +80,29 @@ export default function GeoMapperClient() {
       draggablePanelRef.current.classList.add('cursor-grabbing');
       e.preventDefault(); // Prevent text selection during drag
     }
-  }, [position.x, position.y]);
+  }, [position.x, position.y]); // Depend on position state
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!draggablePanelRef.current || !mapAreaRef.current || !isDragging) return;
 
+      // Calculate the delta from the initial mouse position
       const dx = e.clientX - dragStartRef.current.initialMouseX;
       const dy = e.clientY - dragStartRef.current.initialMouseY;
 
+      // Calculate new panel position based on its initial position and mouse delta
       let newX = dragStartRef.current.initialPanelX + dx;
       let newY = dragStartRef.current.initialPanelY + dy;
       
+      // Constrain within mapAreaRef
       const mapAreaRect = mapAreaRef.current.getBoundingClientRect();
-      const panelWidth = draggablePanelRef.current.offsetWidth;
-      const panelHeight = draggablePanelRef.current.offsetHeight;
+      const panelRect = draggablePanelRef.current.getBoundingClientRect();
+      // The panel's getBoundingClientRect() width/height might be more reliable than offsetWidth/Height during transforms
+      const panelWidth = panelRect.width; 
+      const panelHeight = panelRect.height;
       
+      // Ensure newX and newY are within the mapAreaRef boundaries
+      // mapAreaRect.width and mapAreaRect.height are the dimensions of the container
       newX = Math.max(0, Math.min(newX, mapAreaRect.width - panelWidth));
       newY = Math.max(0, Math.min(newY, mapAreaRect.height - panelHeight));
 
@@ -109,15 +119,17 @@ export default function GeoMapperClient() {
     };
 
     if (isDragging) {
+      // Add listeners to the document to capture mouse events outside the panel
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     }
 
+    // Cleanup: remove event listeners
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging]);
+  }, [isDragging]); // Only re-run if isDragging changes
 
 
   return (
@@ -131,14 +143,15 @@ export default function GeoMapperClient() {
         
         <div
           ref={draggablePanelRef}
-          className="absolute z-50 w-80 cursor-grab rounded-lg shadow-xl border border-black bg-red-500" // DEBUG: Made highly visible
+          className="absolute z-50 w-80 cursor-grab rounded-lg shadow-xl border border-black bg-blue-500 min-h-[100px]" // DEBUG: Changed to blue, added min-height
           style={{
             transform: `translate(${position.x}px, ${position.y}px)`,
             touchAction: 'none', 
           }}
           onMouseDown={handleMouseDown}
         >
-          {/* The Card inside will inherit the red background if it's transparent */}
+          <p className="text-white p-2">PANEL DE PRUEBA AQUÍ</p> {/* DEBUG: Added direct text */}
+          {/* The Card inside will inherit the blue background if it's transparent */}
           <Card className="p-0 flex flex-col bg-transparent shadow-none border-none max-h-[calc(100vh-130px)] overflow-y-auto">
             <MapControls onAddLayer={addLayer} layers={layers} onToggleLayerVisibility={toggleLayerVisibility} />
           </Card>
