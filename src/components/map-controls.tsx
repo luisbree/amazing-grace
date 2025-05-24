@@ -1,8 +1,9 @@
+
 "use client";
 
 import React, { useState, useCallback } from 'react';
 import type { Feature } from 'ol';
-import { KMZ, GeoJSON } from 'ol/format';
+import { KML, GeoJSON } from 'ol/format'; // Changed KMZ to KML
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import { useId } from 'react';
@@ -63,18 +64,19 @@ const MapControls: React.FC<MapControlsProps> = ({ onAddLayer, layers, onToggleL
           featureProjection: 'EPSG:3857', // Project to Web Mercator for map display
         };
 
-        if (fileExtension === 'kmz') {
-          if (!(fileContent instanceof ArrayBuffer)) {
-            throw new Error("KMZ file content is not an ArrayBuffer.");
+        if (fileExtension === 'kml') { // Changed 'kmz' to 'kml'
+          if (typeof fileContent !== 'string') {
+            throw new Error("KML file content is not a string.");
           }
-          features = new KMZ().readFeatures(fileContent, commonFormatOptions);
+          features = new KML().readFeatures(fileContent, commonFormatOptions); // Changed new KMZ() to new KML()
         } else if (fileExtension === 'geojson' || fileExtension === 'json') {
           if (typeof fileContent !== 'string') {
             throw new Error("GeoJSON file content is not a string.");
           }
           features = new GeoJSON().readFeatures(fileContent, commonFormatOptions);
         } else {
-          throw new Error(`Unsupported file type: ${fileExtension}. Please upload KMZ or GeoJSON.`);
+          // This case should ideally be caught before reader.onload
+          throw new Error(`Unsupported file type: ${fileExtension}. Please upload KML or GeoJSON.`); // Changed KMZ to KML
         }
 
         if (features && features.length > 0) {
@@ -109,13 +111,17 @@ const MapControls: React.FC<MapControlsProps> = ({ onAddLayer, layers, onToggleL
       setIsLoading(false);
     };
 
-    if (fileExtension === 'kmz') {
-      reader.readAsArrayBuffer(selectedFile);
+    if (fileExtension === 'kml') { // Changed 'kmz' to 'kml'
+      reader.readAsText(selectedFile); // Changed from readAsArrayBuffer to readAsText
     } else if (fileExtension === 'geojson' || fileExtension === 'json') {
       reader.readAsText(selectedFile);
     } else {
-      toast({ title: "Unsupported File Type", description: `File type ".${fileExtension}" is not supported. Please use KMZ or GeoJSON.`, variant: "destructive" });
+      toast({ title: "Unsupported File Type", description: `File type ".${fileExtension}" is not supported. Please use KML or GeoJSON.`, variant: "destructive" }); // Changed KMZ to KML
       setIsLoading(false);
+      setSelectedFile(null); // Reset state on early exit
+      const fileInput = document.getElementById(fileInputId) as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+      return;
     }
   }, [selectedFile, onAddLayer, fileInputId, toast]);
 
@@ -126,7 +132,7 @@ const MapControls: React.FC<MapControlsProps> = ({ onAddLayer, layers, onToggleL
           <CardTitle className="flex items-center text-lg font-semibold">
             <Upload className="mr-2 h-5 w-5 text-primary" /> Upload Layer
           </CardTitle>
-          <CardDescription>Upload KMZ or GeoJSON files to display on the map.</CardDescription>
+          <CardDescription>Upload KML or GeoJSON files to display on the map.</CardDescription> 
         </CardHeader>
         <CardContent className="space-y-3 pb-4">
           <div>
@@ -135,7 +141,7 @@ const MapControls: React.FC<MapControlsProps> = ({ onAddLayer, layers, onToggleL
               id={fileInputId} 
               type="file" 
               onChange={handleFileChange} 
-              accept=".kmz,.geojson,.json" 
+              accept=".kml,.geojson,.json" // Changed .kmz to .kml
               className="mt-1 file:mr-2 file:py-2 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
             />
           </div>
