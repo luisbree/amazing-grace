@@ -1,3 +1,5 @@
-export default function Home() {
-  return <></>;
+import GeoMapperClient from '@/components/geo-mapper-client';
+
+export default function HomePage() {
+  return <GeoMapperClient />;
 }
