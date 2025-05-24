@@ -22,7 +22,7 @@ export default function GeoMapperClient() {
   const [layers, setLayers] = useState<MapLayer[]>([]);
   const mapRef = useRef<OLMap | null>(null);
 
-  const [position, setPosition] = useState({ x: 16, y: 16 }); 
+  const [position, setPosition] = useState({ x: 16, y: 16 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ initialMouseX: 0, initialMouseY: 0, initialPanelX: 0, initialPanelY: 0 });
   const draggablePanelRef = useRef<HTMLDivElement>(null);
@@ -70,18 +70,18 @@ export default function GeoMapperClient() {
       dragStartRef.current = {
         initialMouseX: e.clientX,
         initialMouseY: e.clientY,
-        initialPanelX: position.x, // Use current position from state
-        initialPanelY: position.y, // Use current position from state
+        initialPanelX: position.x, 
+        initialPanelY: position.y, 
       };
       draggablePanelRef.current.classList.remove('cursor-grab');
       draggablePanelRef.current.classList.add('cursor-grabbing');
-      e.preventDefault();
+      e.preventDefault(); // Prevent text selection during drag
     }
-  }, [position.x, position.y]); // Depends on position to correctly capture initialPanelX/Y
+  }, [position.x, position.y]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!draggablePanelRef.current || !mapAreaRef.current) return;
+      if (!draggablePanelRef.current || !mapAreaRef.current || !isDragging) return;
 
       const dx = e.clientX - dragStartRef.current.initialMouseX;
       const dy = e.clientY - dragStartRef.current.initialMouseY;
@@ -100,6 +100,7 @@ export default function GeoMapperClient() {
     };
 
     const handleMouseUp = () => {
+      if (!isDragging) return;
       setIsDragging(false);
       if (draggablePanelRef.current) {
         draggablePanelRef.current.classList.remove('cursor-grabbing');
@@ -116,7 +117,7 @@ export default function GeoMapperClient() {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging]); // useEffect now only depends on isDragging
+  }, [isDragging]);
 
 
   return (
@@ -130,14 +131,15 @@ export default function GeoMapperClient() {
         
         <div
           ref={draggablePanelRef}
-          className="absolute z-10 w-80 cursor-grab rounded-lg shadow-xl border border-gray-400/50 bg-gray-500/40 backdrop-blur-md"
+          className="absolute z-50 w-80 cursor-grab rounded-lg shadow-xl border border-black bg-red-500" // DEBUG: Made highly visible
           style={{
             transform: `translate(${position.x}px, ${position.y}px)`,
             touchAction: 'none', 
           }}
           onMouseDown={handleMouseDown}
         >
-          <Card className="p-0 flex flex-col bg-transparent shadow-none border-none max-h-[calc(100vh-120px)] overflow-y-auto"> {/* Adjusted max-h slightly */}
+          {/* The Card inside will inherit the red background if it's transparent */}
+          <Card className="p-0 flex flex-col bg-transparent shadow-none border-none max-h-[calc(100vh-130px)] overflow-y-auto">
             <MapControls onAddLayer={addLayer} layers={layers} onToggleLayerVisibility={toggleLayerVisibility} />
           </Card>
         </div>
