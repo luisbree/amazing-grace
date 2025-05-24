@@ -23,10 +23,11 @@ export default function GeoMapperClient() {
   const mapRef = useRef<OLMap | null>(null);
 
   // Draggable panel state
-  const [position, setPosition] = useState({ x: 16, y: 16 }); // Initial position (like top-4 left-4)
+  const [position, setPosition] = useState({ x: 16, y: 16 }); // Initial position (e.g. top-4 left-4 equivalent)
   const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef({ offsetX: 0, offsetY: 0 });
+  const dragStartRef = useRef({ initialMouseX: 0, initialMouseY: 0, initialPanelX: 0, initialPanelY: 0 });
   const draggablePanelRef = useRef<HTMLDivElement>(null);
+  const mapAreaRef = useRef<HTMLDivElement>(null); // Ref for the map container
 
   const addLayer = useCallback((newLayer: MapLayer) => {
     setLayers(prevLayers => {
@@ -67,40 +68,52 @@ export default function GeoMapperClient() {
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (draggablePanelRef.current) {
       setIsDragging(true);
-      // Calculate offset from the element's top-left corner to the mouse click point
-      const panelRect = draggablePanelRef.current.getBoundingClientRect();
+      // Store initial mouse position and panel's current position
       dragStartRef.current = {
-        offsetX: e.clientX - panelRect.left,
-        offsetY: e.clientY - panelRect.top,
+        initialMouseX: e.clientX,
+        initialMouseY: e.clientY,
+        initialPanelX: position.x,
+        initialPanelY: position.y,
       };
-      // Change cursor to grabbing
       draggablePanelRef.current.classList.remove('cursor-grab');
       draggablePanelRef.current.classList.add('cursor-grabbing');
+      // Prevent text selection while dragging
+      e.preventDefault();
     }
   };
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging || !draggablePanelRef.current) return;
+      if (!isDragging || !draggablePanelRef.current || !mapAreaRef.current) return;
 
-      let newX = e.clientX - dragStartRef.current.offsetX;
-      let newY = e.clientY - dragStartRef.current.offsetY;
+      const dx = e.clientX - dragStartRef.current.initialMouseX;
+      const dy = e.clientY - dragStartRef.current.initialMouseY;
 
-      // Constrain to viewport
+      let newX = dragStartRef.current.initialPanelX + dx;
+      let newY = dragStartRef.current.initialPanelY + dy;
+      
+      // Constrain to mapArea boundaries
+      const mapAreaRect = mapAreaRef.current.getBoundingClientRect();
       const panelWidth = draggablePanelRef.current.offsetWidth;
       const panelHeight = draggablePanelRef.current.offsetHeight;
       
-      newX = Math.max(0, Math.min(newX, window.innerWidth - panelWidth));
-      newY = Math.max(0, Math.min(newY, window.innerHeight - panelHeight));
+      // Ensure newX and newY are relative to the mapAreaRef for transform
+      // and constrained within the mapAreaRef's dimensions.
+      // The position state (newX, newY) is already relative to mapAreaRef origin for transform.
+      
+      newX = Math.max(0, Math.min(newX, mapAreaRect.width - panelWidth));
+      newY = Math.max(0, Math.min(newY, mapAreaRect.height - panelHeight));
 
       setPosition({ x: newX, y: newY });
     };
 
     const handleMouseUp = () => {
-      setIsDragging(false);
-      if (draggablePanelRef.current) {
-        draggablePanelRef.current.classList.remove('cursor-grabbing');
-        draggablePanelRef.current.classList.add('cursor-grab');
+      if (isDragging) {
+        setIsDragging(false);
+        if (draggablePanelRef.current) {
+          draggablePanelRef.current.classList.remove('cursor-grabbing');
+          draggablePanelRef.current.classList.add('cursor-grab');
+        }
       }
     };
 
@@ -113,7 +126,7 @@ export default function GeoMapperClient() {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging]);
+  }, [isDragging, position.x, position.y]); // Added position to dependencies for dragStartRef update.
 
 
   return (
@@ -122,7 +135,7 @@ export default function GeoMapperClient() {
         <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-3"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>
         <h1 className="text-2xl font-semibold">Geo Mapper</h1>
       </header>
-      <div className="relative flex-1 overflow-hidden">
+      <div ref={mapAreaRef} className="relative flex-1 overflow-hidden"> {/* Added mapAreaRef here */}
         <MapView mapRef={mapRef} layers={layers} setMapInstance={setMapInstance} />
         
         <div
@@ -130,11 +143,11 @@ export default function GeoMapperClient() {
           className="absolute z-10 w-80 cursor-grab rounded-lg shadow-xl border border-gray-400/50 bg-gray-500/40 backdrop-blur-md"
           style={{
             transform: `translate(${position.x}px, ${position.y}px)`,
-            touchAction: 'none', // Prevent page scroll on touch devices when dragging
+            touchAction: 'none', 
           }}
           onMouseDown={handleMouseDown}
         >
-          <Card className="p-0 flex flex-col bg-transparent shadow-none border-none max-h-[calc(100vh-64px)] overflow-hidden"> 
+          <Card className="p-0 flex flex-col bg-transparent shadow-none border-none max-h-[calc(100vh-100px)] overflow-y-auto"> {/* Adjusted max-h slightly and ensured overflow-y-auto */}
             <MapControls onAddLayer={addLayer} layers={layers} onToggleLayerVisibility={toggleLayerVisibility} />
           </Card>
         </div>
