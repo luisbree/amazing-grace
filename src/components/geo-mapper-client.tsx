@@ -7,9 +7,8 @@ import type VectorLayer from 'ol/layer/Vector';
 import type VectorSource from 'ol/source/Vector';
 
 import MapView from '@/components/map-view';
-// MapControls and Card are not directly used in this extremely simplified debug version
-// import MapControls from '@/components/map-controls';
-// import { Card } from '@/components/ui/card';
+import MapControls from '@/components/map-controls'; // Re-import MapControls
+// Card is used within MapControls
 import { Toaster } from "@/components/ui/toaster";
 
 export interface MapLayer {
@@ -22,9 +21,8 @@ export interface MapLayer {
 export default function GeoMapperClient() {
   const [layers, setLayers] = useState<MapLayer[]>([]);
   const mapRef = useRef<OLMap | null>(null);
-  const mapAreaRef = useRef<HTMLDivElement>(null); // Keep for border and as context for absolute positioning
+  const mapAreaRef = useRef<HTMLDivElement>(null);
 
-  // Layer and map instance logic remains
   const addLayer = useCallback((newLayer: MapLayer) => {
     setLayers(prevLayers => {
       const updatedLayers = [...prevLayers, newLayer];
@@ -61,9 +59,7 @@ export default function GeoMapperClient() {
     });
   }, [layers]);
 
-  // All dragging state, refs (draggablePanelRef), and event handlers (handleMouseDown, useEffect for mousemove/up)
-  // have been removed for this basic visibility test.
-  // The panel will be static.
+  // Dragging logic is temporarily removed to isolate visibility issues.
 
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
@@ -71,21 +67,26 @@ export default function GeoMapperClient() {
         <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-3"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>
         <h1 className="text-2xl font-semibold">Geo Mapper</h1>
       </header>
-      {/* mapAreaRef now has a green border to confirm its bounds and relative positioning context */}
-      <div ref={mapAreaRef} className="relative flex-1 overflow-hidden border-2 border-green-500">
+      <div ref={mapAreaRef} className="relative flex-1 overflow-hidden"> {/* Removed green border */}
         <MapView mapRef={mapRef} layers={layers} setMapInstance={setMapInstance} />
         
-        {/* Ultra-simplified panel for visibility test. No JS logic for position/drag. */}
+        {/* Panel with MapControls, still with fixed position and red background for testing */}
         <div
-          className="absolute z-[9999] bg-red-500 text-white font-bold flex items-center justify-center" // Extremely high z-index
+          className="absolute z-[50] bg-red-500 text-white flex flex-col overflow-hidden" // Keep high z-index and red background for now, allow content to scroll
           style={{
-            top: '16px', // Hardcoded position from top
-            left: '16px', // Hardcoded position from left
-            width: '200px', // Hardcoded width
-            height: '100px', // Hardcoded height
+            top: '16px', 
+            left: '16px',
+            width: '350px', // A bit wider to accommodate MapControls
+            maxHeight: 'calc(100vh - 100px)', // Prevent it from being too tall
+            minHeight: '100px', // Ensure it has some height
           }}
         >
-           PANEL TEST
+          {/* Reintroduce MapControls */}
+          <MapControls 
+            onAddLayer={addLayer}
+            layers={layers}
+            onToggleLayerVisibility={toggleLayerVisibility}
+          />
         </div>
       </div>
       <Toaster />
