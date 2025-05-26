@@ -3,7 +3,7 @@
 
 import React, { useState, useCallback } from 'react';
 import type { Feature } from 'ol';
-import { KML, GeoJSON } from 'ol/format'; // Changed KMZ to KML
+import { KML, GeoJSON } from 'ol/format';
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import { useId } from 'react';
@@ -60,23 +60,22 @@ const MapControls: React.FC<MapControlsProps> = ({ onAddLayer, layers, onToggleL
         const fileContent = event.target.result;
 
         const commonFormatOptions = {
-          dataProjection: 'EPSG:4326', // Assume input data is geographic coordinates
-          featureProjection: 'EPSG:3857', // Project to Web Mercator for map display
+          dataProjection: 'EPSG:4326', 
+          featureProjection: 'EPSG:3857', 
         };
 
-        if (fileExtension === 'kml') { // Changed 'kmz' to 'kml'
+        if (fileExtension === 'kml') { 
           if (typeof fileContent !== 'string') {
             throw new Error("KML file content is not a string.");
           }
-          features = new KML().readFeatures(fileContent, commonFormatOptions); // Changed new KMZ() to new KML()
+          features = new KML().readFeatures(fileContent, commonFormatOptions); 
         } else if (fileExtension === 'geojson' || fileExtension === 'json') {
           if (typeof fileContent !== 'string') {
             throw new Error("GeoJSON file content is not a string.");
           }
           features = new GeoJSON().readFeatures(fileContent, commonFormatOptions);
         } else {
-          // This case should ideally be caught before reader.onload
-          throw new Error(`Unsupported file type: ${fileExtension}. Please upload KML or GeoJSON.`); // Changed KMZ to KML
+          throw new Error(`Unsupported file type: ${fileExtension}. Please upload KML or GeoJSON.`);
         }
 
         if (features && features.length > 0) {
@@ -102,7 +101,7 @@ const MapControls: React.FC<MapControlsProps> = ({ onAddLayer, layers, onToggleL
         setIsLoading(false);
         setSelectedFile(null);
         const fileInput = document.getElementById(fileInputId) as HTMLInputElement;
-        if (fileInput) fileInput.value = ''; // Reset file input
+        if (fileInput) fileInput.value = ''; 
       }
     };
 
@@ -111,14 +110,14 @@ const MapControls: React.FC<MapControlsProps> = ({ onAddLayer, layers, onToggleL
       setIsLoading(false);
     };
 
-    if (fileExtension === 'kml') { // Changed 'kmz' to 'kml'
-      reader.readAsText(selectedFile); // Changed from readAsArrayBuffer to readAsText
+    if (fileExtension === 'kml') { 
+      reader.readAsText(selectedFile); 
     } else if (fileExtension === 'geojson' || fileExtension === 'json') {
       reader.readAsText(selectedFile);
     } else {
-      toast({ title: "Unsupported File Type", description: `File type ".${fileExtension}" is not supported. Please use KML or GeoJSON.`, variant: "destructive" }); // Changed KMZ to KML
+      toast({ title: "Unsupported File Type", description: `File type ".${fileExtension}" is not supported. Please use KML or GeoJSON.`, variant: "destructive" });
       setIsLoading(false);
-      setSelectedFile(null); // Reset state on early exit
+      setSelectedFile(null); 
       const fileInput = document.getElementById(fileInputId) as HTMLInputElement;
       if (fileInput) fileInput.value = '';
       return;
@@ -126,8 +125,8 @@ const MapControls: React.FC<MapControlsProps> = ({ onAddLayer, layers, onToggleL
   }, [selectedFile, onAddLayer, fileInputId, toast]);
 
   return (
-    <div className="flex flex-col h-full">
-      <Card className="shadow-none border-0 border-b rounded-none">
+    <div className="flex flex-col h-full bg-transparent"> {/* Added bg-transparent here */}
+      <Card className="shadow-none border-0 border-b rounded-none bg-card/80 backdrop-blur-sm"> {/* Slight transparency for cards too for layered effect */}
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center text-lg font-semibold">
             <Upload className="mr-2 h-5 w-5 text-primary" /> Upload Layer
@@ -141,7 +140,7 @@ const MapControls: React.FC<MapControlsProps> = ({ onAddLayer, layers, onToggleL
               id={fileInputId} 
               type="file" 
               onChange={handleFileChange} 
-              accept=".kml,.geojson,.json" // Changed .kmz to .kml
+              accept=".kml,.geojson,.json" 
               className="mt-1 file:mr-2 file:py-2 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
             />
           </div>
@@ -152,7 +151,7 @@ const MapControls: React.FC<MapControlsProps> = ({ onAddLayer, layers, onToggleL
         </CardContent>
       </Card>
 
-      <Card className="flex-1 flex flex-col min-h-0 shadow-none border-0 rounded-none">
+      <Card className="flex-1 flex flex-col min-h-0 shadow-none border-0 rounded-none bg-card/80 backdrop-blur-sm"> {/* Slight transparency for cards */}
         <CardHeader className="pb-4 pt-4">
           <CardTitle className="flex items-center text-lg font-semibold">
             <Layers className="mr-2 h-5 w-5 text-primary" /> Manage Layers
