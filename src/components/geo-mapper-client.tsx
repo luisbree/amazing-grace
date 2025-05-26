@@ -68,12 +68,12 @@ export default function GeoMapperClient() {
         <MapView mapRef={mapRef} layers={layers} setMapInstance={setMapInstance} />
         
         <div
-          className="absolute z-[50] bg-gray-800/70 backdrop-blur-md rounded-lg shadow-xl flex flex-col overflow-hidden text-white"
+          className="absolute z-[50] bg-gray-800/50 backdrop-blur-md rounded-lg shadow-xl flex flex-col overflow-hidden text-white"
           style={{
             top: '16px', 
             left: '16px',
             width: '350px',
-            maxHeight: 'calc(100vh - 116px)', // 68px header + 16px top + 16px bottom margin from viewport edge + 16px safety
+            maxHeight: 'calc(100vh - 116px)', 
             minHeight: '100px',
           }}
         >
@@ -88,3 +88,4 @@ export default function GeoMapperClient() {
     </div>
   );
 }
+

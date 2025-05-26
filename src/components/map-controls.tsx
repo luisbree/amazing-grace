@@ -126,22 +126,22 @@ const MapControls: React.FC<MapControlsProps> = ({ onAddLayer, layers, onToggleL
 
   return (
     <div className="flex flex-col h-full bg-transparent">
-      <Card className="shadow-none border-0 border-b rounded-none bg-card/80"> 
+      <Card className="bg-transparent shadow-none border-0 border-b border-white/20 rounded-none"> 
         <CardHeader className="pb-4">
-          <CardTitle className="flex items-center text-lg font-semibold">
+          <CardTitle className="flex items-center text-lg font-semibold text-white">
             <Upload className="mr-2 h-5 w-5 text-primary" /> Upload Layer
           </CardTitle>
-          <CardDescription>Upload KML or GeoJSON files to display on the map.</CardDescription> 
+          <CardDescription className="text-gray-300">Upload KML or GeoJSON files to display on the map.</CardDescription> 
         </CardHeader>
         <CardContent className="space-y-3 pb-4">
           <div>
-            <Label htmlFor={fileInputId} className="text-sm font-medium">Choose file</Label>
+            <Label htmlFor={fileInputId} className="text-sm font-medium text-white">Choose file</Label>
             <Input 
               id={fileInputId} 
               type="file" 
               onChange={handleFileChange} 
               accept=".kml,.geojson,.json" 
-              className="mt-1 file:mr-2 file:py-2 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+              className="mt-1 file:mr-2 file:py-2 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 text-white border-white/30 placeholder-gray-400"
             />
           </div>
           <Button onClick={handleFileUpload} disabled={!selectedFile || isLoading} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">
@@ -151,26 +151,26 @@ const MapControls: React.FC<MapControlsProps> = ({ onAddLayer, layers, onToggleL
         </CardContent>
       </Card>
 
-      <Card className="flex-1 flex flex-col min-h-0 shadow-none border-0 rounded-none bg-card/80">
+      <Card className="flex-1 flex flex-col min-h-0 bg-transparent shadow-none border-0 rounded-none">
         <CardHeader className="pb-4 pt-4">
-          <CardTitle className="flex items-center text-lg font-semibold">
+          <CardTitle className="flex items-center text-lg font-semibold text-white">
             <Layers className="mr-2 h-5 w-5 text-primary" /> Manage Layers
           </CardTitle>
-           {layers.length > 0 && <CardDescription>Toggle visibility of uploaded layers.</CardDescription>}
+           {layers.length > 0 && <CardDescription className="text-gray-300">Toggle visibility of uploaded layers.</CardDescription>}
         </CardHeader>
         <CardContent className="flex-1 overflow-hidden p-0">
           <ScrollArea className="h-full p-3 pt-0">
             {layers.length === 0 ? (
               <div className="text-center py-8">
-                <Layers className="mx-auto h-12 w-12 text-muted-foreground/50" />
-                <p className="mt-2 text-sm text-muted-foreground">No layers uploaded yet.</p>
-                <p className="text-xs text-muted-foreground/80">Use the uploader above to add data.</p>
+                <Layers className="mx-auto h-12 w-12 text-gray-400/50" />
+                <p className="mt-2 text-sm text-gray-300">No layers uploaded yet.</p>
+                <p className="text-xs text-gray-400/80">Use the uploader above to add data.</p>
               </div>
             ) : (
               <ul className="space-y-2">
                 {layers.map((layer) => (
-                  <li key={layer.id} className="flex items-center justify-between p-2.5 rounded-md border bg-card hover:bg-accent/10 transition-colors">
-                    <Label htmlFor={`layer-toggle-${layer.id}`} className="flex-1 cursor-pointer truncate pr-2 text-sm font-medium text-foreground" title={layer.name}>
+                  <li key={layer.id} className="flex items-center justify-between p-2.5 rounded-md border border-white/20 hover:bg-white/10 transition-colors">
+                    <Label htmlFor={`layer-toggle-${layer.id}`} className="flex-1 cursor-pointer truncate pr-2 text-sm font-medium text-white" title={layer.name}>
                       {layer.name}
                     </Label>
                     <div className="flex items-center">
@@ -195,3 +195,4 @@ const MapControls: React.FC<MapControlsProps> = ({ onAddLayer, layers, onToggleL
 };
 
 export default MapControls;
+
