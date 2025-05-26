@@ -125,8 +125,8 @@ const MapControls: React.FC<MapControlsProps> = ({ onAddLayer, layers, onToggleL
   }, [selectedFile, onAddLayer, fileInputId, toast]);
 
   return (
-    <div className="flex flex-col h-full bg-transparent"> {/* Added bg-transparent here */}
-      <Card className="shadow-none border-0 border-b rounded-none bg-card/80 backdrop-blur-sm"> {/* Slight transparency for cards too for layered effect */}
+    <div className="flex flex-col h-full bg-transparent">
+      <Card className="shadow-none border-0 border-b rounded-none bg-card/80"> 
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center text-lg font-semibold">
             <Upload className="mr-2 h-5 w-5 text-primary" /> Upload Layer
@@ -151,7 +151,7 @@ const MapControls: React.FC<MapControlsProps> = ({ onAddLayer, layers, onToggleL
         </CardContent>
       </Card>
 
-      <Card className="flex-1 flex flex-col min-h-0 shadow-none border-0 rounded-none bg-card/80 backdrop-blur-sm"> {/* Slight transparency for cards */}
+      <Card className="flex-1 flex flex-col min-h-0 shadow-none border-0 rounded-none bg-card/80">
         <CardHeader className="pb-4 pt-4">
           <CardTitle className="flex items-center text-lg font-semibold">
             <Layers className="mr-2 h-5 w-5 text-primary" /> Manage Layers
