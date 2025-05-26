@@ -22,6 +22,13 @@ export default function GeoMapperClient() {
   const mapRef = useRef<OLMap | null>(null);
   const mapAreaRef = useRef<HTMLDivElement>(null);
 
+  // State for panel position and dragging
+  const [position, setPosition] = useState({ x: 16, y: 16 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const panelRef = useRef<HTMLDivElement>(null);
+
+
   const addLayer = useCallback((newLayer: MapLayer) => {
     setLayers(prevLayers => {
       const updatedLayers = [...prevLayers, newLayer];
@@ -50,13 +57,62 @@ export default function GeoMapperClient() {
   
   const setMapInstance = useCallback((mapInstance: OLMap) => {
     mapRef.current = mapInstance;
+    // Ensure layers are added to the new map instance if they already exist
     layers.forEach(layer => {
       if (mapRef.current && layer.olLayer && !mapRef.current.getLayers().getArray().includes(layer.olLayer)) {
         mapRef.current.addLayer(layer.olLayer);
         layer.olLayer.setVisible(layer.visible);
       }
     });
-  }, [layers]);
+  }, [layers]); // Added layers as a dependency
+
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (panelRef.current) {
+      setIsDragging(true);
+      // Calculate offset from the panel's top-left corner to the mouse click point
+      const panelRect = panelRef.current.getBoundingClientRect();
+      dragStartRef.current = {
+        x: e.clientX - panelRect.left,
+        y: e.clientY - panelRect.top,
+      };
+      // Prevent text selection while dragging
+      e.preventDefault();
+    }
+  }, []);
+  
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging || !mapAreaRef.current || !panelRef.current) return;
+
+      const mapRect = mapAreaRef.current.getBoundingClientRect();
+      const panelRect = panelRef.current.getBoundingClientRect();
+
+      // Calculate new X and Y based on mouse position relative to map area, and initial click offset
+      let newX = e.clientX - mapRect.left - dragStartRef.current.x;
+      let newY = e.clientY - mapRect.top - dragStartRef.current.y;
+
+      // Constrain dragging within the mapAreaRef boundaries
+      newX = Math.max(0, Math.min(newX, mapRect.width - panelRect.width));
+      newY = Math.max(0, Math.min(newY, mapRect.height - panelRect.height));
+      
+      setPosition({ x: newX, y: newY });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging]);
+
 
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
@@ -68,14 +124,15 @@ export default function GeoMapperClient() {
         <MapView mapRef={mapRef} layers={layers} setMapInstance={setMapInstance} />
         
         <div
-          className="absolute z-[50] bg-gray-800/50 backdrop-blur-md rounded-lg shadow-xl flex flex-col overflow-hidden text-white"
+          ref={panelRef}
+          className="absolute z-[50] bg-gray-800/30 backdrop-blur-md rounded-lg shadow-xl flex flex-col overflow-hidden text-white cursor-grab active:cursor-grabbing"
           style={{
-            top: '16px', 
-            left: '16px',
+            transform: `translate(${position.x}px, ${position.y}px)`,
             width: '350px',
-            maxHeight: 'calc(100vh - 116px)', 
-            minHeight: '100px',
+            maxHeight: 'calc(100vh - 116px)', // Header (64px) + some padding (16*2=32px) + panel top/bottom padding
+            minHeight: '100px', // Ensures panel has some height even if empty
           }}
+          onMouseDown={handleMouseDown}
         >
           <MapControls 
             onAddLayer={addLayer}
@@ -88,4 +145,3 @@ export default function GeoMapperClient() {
     </div>
   );
 }
-
