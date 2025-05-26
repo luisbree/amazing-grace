@@ -25,7 +25,7 @@ export default function GeoMapperClient() {
   // State for panel position and dragging
   const [position, setPosition] = useState({ x: 16, y: 16 });
   const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef({ x: 0, y: 0 });
+  const dragStartRef = useRef({ x: 0, y: 0 }); // Relative to panel's top-left
   const panelRef = useRef<HTMLDivElement>(null);
 
 
@@ -64,7 +64,7 @@ export default function GeoMapperClient() {
         layer.olLayer.setVisible(layer.visible);
       }
     });
-  }, [layers]); // Added layers as a dependency
+  }, [layers]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (panelRef.current) {
@@ -120,15 +120,15 @@ export default function GeoMapperClient() {
         <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-3"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>
         <h1 className="text-2xl font-semibold">Geo Mapper</h1>
       </header>
-      <div ref={mapAreaRef} className="relative flex-1 overflow-hidden">
+      <div ref={mapAreaRef} className="relative flex-1 overflow-hidden"> {/* Added border for debugging */}
         <MapView mapRef={mapRef} layers={layers} setMapInstance={setMapInstance} />
         
         <div
           ref={panelRef}
-          className="absolute z-[50] bg-gray-800/30 backdrop-blur-md rounded-lg shadow-xl flex flex-col overflow-hidden text-white cursor-grab active:cursor-grabbing"
+          className="absolute z-[50] bg-gray-800/60 backdrop-blur-md rounded-lg shadow-xl flex flex-col overflow-hidden text-white cursor-grab active:cursor-grabbing"
           style={{
             transform: `translate(${position.x}px, ${position.y}px)`,
-            width: '350px',
+            width: '350px', // Fixed width for the panel
             maxHeight: 'calc(100vh - 116px)', // Header (64px) + some padding (16*2=32px) + panel top/bottom padding
             minHeight: '100px', // Ensures panel has some height even if empty
           }}
