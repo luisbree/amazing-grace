@@ -6,14 +6,17 @@ import type { Map as OLMap, Feature as OLFeature } from 'ol';
 import type VectorLayerType from 'ol/layer/Vector';
 import type VectorSourceType from 'ol/source/Vector';
 import type { Extent } from 'ol/extent';
-import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import Draw from 'ol/interaction/Draw';
-import {KML, GeoJSON} from 'ol/format';
+import { KML, GeoJSON } from 'ol/format';
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import { Style, Fill, Stroke, Circle as CircleStyle } from 'ol/style';
 import { transformExtent } from 'ol/proj';
 import osmtogeojson from 'osmtogeojson';
+import shpwrite from 'shp-write';
+import JSZip from 'jszip';
+
 
 import MapView from '@/components/map-view';
 import MapControls from '@/components/map-controls';
@@ -30,7 +33,7 @@ export interface MapLayer {
 
 interface OSMCategoryConfig {
   id: string;
-  name: string;
+  name: string; // Changed from namePrefix for UI label
   overpassQueryFragment: (bboxStr: string) => string;
   matcher: (tags: any) => boolean;
   style: Style;
@@ -91,6 +94,28 @@ const osmCategoryConfig: OSMCategoryConfig[] = [
 
 const osmCategoriesForSelection = osmCategoryConfig.map(({ id, name }) => ({ id, name }));
 
+// Helper to trigger file downloads
+function triggerDownload(content: string, fileName: string, contentType: string) {
+  const blob = new Blob([content], { type: contentType });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
+}
+
+function triggerDownloadArrayBuffer(content: ArrayBuffer, fileName: string, contentType: string) {
+  const blob = new Blob([content], { type: contentType });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
+}
 
 export default function GeoMapperClient() {
   const [layers, setLayers] = useState<MapLayer[]>([]);
@@ -109,7 +134,7 @@ export default function GeoMapperClient() {
   const { toast } = useToast();
 
   const drawingLayerRef = useRef<VectorLayerType<VectorSourceType<OLFeature<any>>> | null>(null);
-  const drawingSourceRef = useRef<VectorSourceType<OLFeature<any>> | null>(null);
+  const drawingSourceRef = useRef<VectorSourceType<OLFeature<any>>> | null>(null);
   const drawInteractionRef = useRef<Draw | null>(null);
 
   const [activeDrawTool, setActiveDrawTool] = useState<string | null>(null);
@@ -120,6 +145,9 @@ export default function GeoMapperClient() {
   useEffect(() => {
     selectedOSMCategoryIdsRef.current = selectedOSMCategoryIds;
   }, [selectedOSMCategoryIds]);
+
+  const [downloadFormat, setDownloadFormat] = useState<string>('geojson');
+  const [isDownloading, setIsDownloading] = useState(false);
 
 
   const addLayer = useCallback((newLayer: MapLayer) => {
@@ -181,20 +209,28 @@ export default function GeoMapperClient() {
 
     const baseLayer = currentMap.getLayers().getArray().find(l => l.get('name') === 'OSMBaseLayer');
     
+    // Remove all non-base and non-drawing vector layers
     const olMapVectorLayers = currentMap.getLayers().getArray()
       .filter(l => l !== baseLayer && l !== drawingLayerRef.current) as VectorLayerType<VectorSourceType<OLFeature<any>>>[];
-
+    
     olMapVectorLayers.forEach(olMapLayer => {
         currentMap.removeLayer(olMapLayer);
     });
     
+    // Add layers from state
     layers.forEach(appLayer => {
-      currentMap.addLayer(appLayer.olLayer);
+      if (!currentMap.getLayers().getArray().includes(appLayer.olLayer)) {
+        currentMap.addLayer(appLayer.olLayer);
+      }
       appLayer.olLayer.setVisible(appLayer.visible);
     });
 
     if (drawingLayerRef.current) {
-      drawingLayerRef.current.setZIndex(layers.length + 1); 
+      // Ensure drawing layer is on top
+      if (!currentMap.getLayers().getArray().includes(drawingLayerRef.current)) {
+         currentMap.addLayer(drawingLayerRef.current);
+      }
+      drawingLayerRef.current.setZIndex(layers.length + 100); // Ensure it's above other data layers
     }
 
   }, [layers, mapRef]);
@@ -285,7 +321,6 @@ export default function GeoMapperClient() {
       const panelRect = panelRef.current.getBoundingClientRect();
 
       if (panelRect.width === 0 || panelRect.height === 0 || mapRect.width === 0 || mapRect.height === 0) {
-        // console.warn("Map or Panel dimensions are zero, skipping drag update.");
         return;
       }
 
@@ -293,7 +328,6 @@ export default function GeoMapperClient() {
       newY = Math.max(0, Math.min(newY, mapRect.height - panelRect.height));
 
       if (isNaN(newX) || isNaN(newY)) {
-        // console.error("Calculated NaN position, skipping drag update:", {newX, newY});
         return;
       }
       setPosition({ x: newX, y: newY });
@@ -338,14 +372,12 @@ export default function GeoMapperClient() {
 
     try {
       const extent3857 = geometry.getExtent();
-      console.log("Extent3857 (Source):", extent3857);
       if (!extent3857 || extent3857.some(val => !isFinite(val)) || (extent3857[2] - extent3857[0] <= 0 && extent3857[2] !== extent3857[0]) || (extent3857[3] - extent3857[1] <= 0 && extent3857[3] !== extent3857[1])) {
           console.error("Invalid extent in EPSG:3857:", extent3857);
           throw new Error("Área dibujada tiene una extensión inválida antes de la transformación (inválida o puntos/líneas).");
       }
 
       const extent4326_transformed = transformExtent(extent3857, 'EPSG:3857', 'EPSG:4326');
-      console.log("Extent4326 (Transformed, raw):", extent4326_transformed);
       
       if (!extent4326_transformed || extent4326_transformed.some(val => !isFinite(val))) {
           console.error("Fallo al transformar extent. Extent3857:", extent3857, "Extent4326_transformed:", extent4326_transformed);
@@ -357,22 +389,18 @@ export default function GeoMapperClient() {
       const n_coord = parseFloat(extent4326_transformed[3].toFixed(6));
       const e_coord = parseFloat(extent4326_transformed[2].toFixed(6));
 
-      console.log("Coordinates for Overpass (s,w,n,e - after toFixed(6)):", { s_coord, w_coord, n_coord, e_coord });
-
       if (n_coord < s_coord) { 
           const message = `Error de Bounding Box (N < S): Norte ${n_coord} es menor que Sur ${s_coord}. Extent4326_raw: ${extent4326_transformed.join(',')}`;
           console.error(message, {n_coord, s_coord, extent4326_transformed});
           throw new Error(message);
       }
-      if (e_coord < w_coord && Math.abs(e_coord - w_coord) < 180) { // Check for normal case, ignore dateline crossing for now
+      if (e_coord < w_coord && Math.abs(e_coord - w_coord) < 180) { 
           const message = `Error de Bounding Box (E < W): Este ${e_coord} es menor que Oeste ${w_coord}. Extent4326_raw: ${extent4326_transformed.join(',')}`;
           console.error(message, {e_coord, w_coord, extent4326_transformed});
           throw new Error(message);
       }
-      console.log("Extent4326 after checks:", {s_coord, w_coord, n_coord, e_coord});
             
       const bboxStr = `${s_coord},${w_coord},${n_coord},${e_coord}`;
-      console.log("Constructed bboxStr for Overpass API:", bboxStr);
       
       let queryParts: string[] = [];
       const categoriesToFetch = osmCategoryConfig.filter(cat => selectedOSMCategoryIdsRef.current.includes(cat.id));
@@ -388,8 +416,7 @@ export default function GeoMapperClient() {
         );
         out geom;
       `;
-      console.log("Overpass Query:", overpassQuery); 
-
+      
       const response = await fetch('https://overpass-api.de/api/interpreter', {
         method: 'POST',
         body: `data=${encodeURIComponent(overpassQuery)}`,
@@ -507,20 +534,125 @@ export default function GeoMapperClient() {
         dataProjection: 'EPSG:4326',
         featureProjection: 'EPSG:3857',
       });
-      const blob = new Blob([kmlString], { type: 'application/vnd.google-earth.kml+xml;charset=utf-8' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = 'drawings.kml';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(link.href);
+      triggerDownload(kmlString, 'drawings.kml', 'application/vnd.google-earth.kml+xml;charset=utf-8');
       toast({ title: "Dibujos Guardados", description: "Dibujos guardados como drawings.kml." });
     } catch (error) {
       console.error("Error guardando KML:", error);
       toast({ title: "Error Guardando KML", description: "No se pudieron guardar los dibujos.", variant: "destructive" });
     }
   }, [toast]);
+
+  const handleDownloadOSMLayers = useCallback(async () => {
+    setIsDownloading(true);
+    toast({ title: "Procesando descarga...", description: `Formato: ${downloadFormat.toUpperCase()}` });
+
+    const osmLayers = layers.filter(layer => layer.id.startsWith('osm-'));
+    if (osmLayers.length === 0) {
+      toast({ title: "Sin Capas OSM", description: "No hay capas OSM para descargar.", variant: "destructive" });
+      setIsDownloading(false);
+      return;
+    }
+
+    try {
+      if (downloadFormat === 'geojson') {
+        const allFeatures: OLFeature<any>[] = [];
+        osmLayers.forEach(layer => {
+          const source = layer.olLayer.getSource();
+          if (source) {
+            allFeatures.push(...source.getFeatures());
+          }
+        });
+        if (allFeatures.length === 0) throw new Error("No hay entidades en las capas OSM seleccionadas.");
+        const geojsonString = new GeoJSON().writeFeatures(allFeatures, {
+          dataProjection: 'EPSG:4326',
+          featureProjection: 'EPSG:3857',
+          featureProperties: (feature: OLFeature<any>) => { // Keep all properties
+            const props = { ...feature.getProperties() };
+            delete props[feature.getGeometryName() as string]; // Remove geometry from properties
+            return props;
+          }
+        });
+        triggerDownload(geojsonString, 'osm_data.geojson', 'application/geo+json;charset=utf-8');
+        toast({ title: "Descarga Completa", description: "Entidades OSM descargadas como GeoJSON." });
+
+      } else if (downloadFormat === 'kml') {
+        const allFeatures: OLFeature<any>[] = [];
+        osmLayers.forEach(layer => {
+          const source = layer.olLayer.getSource();
+          if (source) {
+            allFeatures.push(...source.getFeatures());
+          }
+        });
+        if (allFeatures.length === 0) throw new Error("No hay entidades en las capas OSM seleccionadas.");
+        const kmlString = new KML().writeFeatures(allFeatures, {
+          dataProjection: 'EPSG:4326',
+          featureProjection: 'EPSG:3857'
+        });
+        triggerDownload(kmlString, 'osm_data.kml', 'application/vnd.google-earth.kml+xml;charset=utf-8');
+        toast({ title: "Descarga Completa", description: "Entidades OSM descargadas como KML." });
+
+      } else if (downloadFormat === 'shp') {
+        const geoJsonDataPerLayer: { [key: string]: any } = {};
+        let featuresFound = false;
+
+        osmLayers.forEach(layer => {
+          const source = layer.olLayer.getSource();
+          const layerFeatures = source ? source.getFeatures() : [];
+          if (layerFeatures.length > 0) {
+            featuresFound = true;
+            const featureCollection = new GeoJSON().writeFeaturesObject(layerFeatures, {
+              dataProjection: 'EPSG:4326',
+              featureProjection: 'EPSG:3857',
+              featureProperties: (feature: OLFeature<any>) => {
+                const props = { ...feature.getProperties() };
+                delete props[feature.getGeometryName() as string];
+                // Sanitize property names for DBF (max 10 chars, no special chars)
+                const sanitizedProps: Record<string, any> = {};
+                for (const key in props) {
+                    let sanitizedKey = key.replace(/[^a-zA-Z0-9_]/g, '').substring(0, 10);
+                    if(sanitizedKey.length === 0) sanitizedKey = `prop${Object.keys(sanitizedProps).length}`; // fallback if key becomes empty
+                    
+                    // Ensure unique keys after sanitization
+                    let counter = 0;
+                    let finalKey = sanitizedKey;
+                    while(finalKey in sanitizedProps) {
+                        counter++;
+                        finalKey = `${sanitizedKey.substring(0, 10 - String(counter).length)}${counter}`;
+                    }
+                    sanitizedProps[finalKey] = props[key];
+                }
+                return sanitizedProps;
+              }
+            });
+            // Sanitize layer name for filename
+            const fileName = layer.name.replace(/[^a-zA-Z0-9_]/g, '_').replace(/\s+/g, '_');
+            geoJsonDataPerLayer[fileName] = featureCollection;
+          }
+        });
+
+        if (!featuresFound) throw new Error("No hay entidades en las capas OSM para exportar como Shapefile.");
+
+        // shpwrite.zip returns a promise with base64 data
+        const zipContentBase64 = await shpwrite.zip(geoJsonDataPerLayer);
+        
+        // Convert base64 to ArrayBuffer
+        const byteString = atob(zipContentBase64);
+        const arrayBuffer = new ArrayBuffer(byteString.length);
+        const uint8Array = new Uint8Array(arrayBuffer);
+        for (let i = 0; i < byteString.length; i++) {
+          uint8Array[i] = byteString.charCodeAt(i);
+        }
+        triggerDownloadArrayBuffer(arrayBuffer, 'osm_shapefiles.zip', 'application/zip');
+        toast({ title: "Descarga Completa", description: "Entidades OSM descargadas como Shapefile (ZIP)." });
+      }
+
+    } catch (error: any) {
+      console.error("Error descargando capas OSM:", error);
+      toast({ title: "Error de Descarga", description: error.message || "No se pudieron descargar las capas.", variant: "destructive" });
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [layers, downloadFormat, toast]);
 
 
   return (
@@ -553,7 +685,7 @@ export default function GeoMapperClient() {
           </div>
 
           {!isCollapsed && (
-            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}> {/* Adjusted max-height */}
+            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}>
               <MapControls
                   onAddLayer={addLayer}
                   layers={layers}
@@ -573,6 +705,10 @@ export default function GeoMapperClient() {
                   osmCategoriesForSelection={osmCategoriesForSelection}
                   selectedOSMCategoryIds={selectedOSMCategoryIds}
                   onSelectedOSMCategoriesChange={setSelectedOSMCategoryIds}
+                  downloadFormat={downloadFormat}
+                  onDownloadFormatChange={setDownloadFormat}
+                  onDownloadOSMLayers={handleDownloadOSMLayers}
+                  isDownloading={isDownloading}
               />
             </div>
           )}

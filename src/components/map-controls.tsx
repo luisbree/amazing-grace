@@ -15,10 +15,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   Upload, Layers, FileText, Loader2, MousePointerClick, XCircle, ZoomIn, Trash2,
-  Square, PenLine, Dot, Ban, Eraser, Save, ListFilter, ChevronDown, Settings2 // Added ChevronDown for accordion, Settings2 as placeholder
+  Square, PenLine, Dot, Ban, Eraser, Save, ListFilter, Download
 } from 'lucide-react';
 import {
   Accordion,
@@ -26,6 +26,13 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import type { MapLayer } from '@/components/geo-mapper-client';
 import { useToast } from "@/hooks/use-toast";
 import { Separator } from '@/components/ui/separator';
@@ -49,9 +56,12 @@ interface MapControlsProps {
   osmCategoriesForSelection: { id: string; name: string; }[];
   selectedOSMCategoryIds: string[];
   onSelectedOSMCategoriesChange: (ids: string[]) => void;
+  downloadFormat: string;
+  onDownloadFormatChange: (format: string) => void;
+  onDownloadOSMLayers: () => void;
+  isDownloading: boolean;
 }
 
-// Helper component for Accordion Triggers to keep styling consistent
 const SectionHeader: React.FC<{ title: string; description?: string; icon: React.ElementType }> = ({ title, description, icon: Icon }) => (
   <div className="flex items-center w-full">
     <Icon className="mr-2 h-4 w-4 text-primary" />
@@ -82,6 +92,10 @@ const MapControls: React.FC<MapControlsProps> = ({
   osmCategoriesForSelection,
   selectedOSMCategoryIds,
   onSelectedOSMCategoriesChange,
+  downloadFormat,
+  onDownloadFormatChange,
+  onDownloadOSMLayers,
+  isDownloading,
 }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedMultipleFiles, setSelectedMultipleFiles] = useState<FileList | null>(null);
@@ -287,7 +301,7 @@ const MapControls: React.FC<MapControlsProps> = ({
                 <p className="text-xs text-gray-400/70">Use el cargador de arriba.</p>
               </div>
             ) : (
-              <ScrollArea className="max-h-48 p-2"> {/* Max height for layer list */}
+              <ScrollArea className="max-h-48 p-2"> 
                 <ul className="space-y-1.5">
                   {layers.map((layer) => (
                     <li key={layer.id} className="flex items-center justify-between p-2 rounded-md border border-white/15 hover:bg-white/10 transition-colors">
@@ -477,9 +491,43 @@ const MapControls: React.FC<MapControlsProps> = ({
           </AccordionContent>
         </AccordionItem>
 
+        <AccordionItem value="download-osm-section" className="border-b-0 bg-white/5 rounded-md">
+          <AccordionTrigger className="p-3 hover:no-underline hover:bg-white/10 rounded-t-md data-[state=open]:rounded-b-none">
+             <SectionHeader 
+              title="Descargar Entidades OSM"
+              description="Exporte las capas OSM cargadas."
+              icon={Download} 
+            />
+          </AccordionTrigger>
+          <AccordionContent className="p-3 pt-2 space-y-3 border-t border-white/10 bg-black/10 rounded-b-md">
+            <div>
+              <Label htmlFor="download-format-select" className="text-xs font-medium text-white/90 mb-1 block">Formato de Descarga</Label>
+              <Select value={downloadFormat} onValueChange={onDownloadFormatChange}>
+                <SelectTrigger id="download-format-select" className="w-full text-xs h-8 border-white/30 bg-black/20 text-white/90 focus:ring-primary">
+                  <SelectValue placeholder="Seleccionar formato" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-700 text-white border-gray-600">
+                  <SelectItem value="geojson" className="text-xs hover:bg-gray-600 focus:bg-gray-600">GeoJSON</SelectItem>
+                  <SelectItem value="kml" className="text-xs hover:bg-gray-600 focus:bg-gray-600">KML</SelectItem>
+                  <SelectItem value="shp" className="text-xs hover:bg-gray-600 focus:bg-gray-600">Shapefile (ZIP)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button 
+              onClick={onDownloadOSMLayers} 
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground text-xs h-8"
+              disabled={isDownloading}
+            >
+              {isDownloading ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <Download className="mr-2 h-3 w-3" />}
+              {isDownloading ? 'Descargando...' : 'Descargar Capas OSM'}
+            </Button>
+          </AccordionContent>
+        </AccordionItem>
+
       </Accordion>
     </ScrollArea>
   );
 };
 
 export default MapControls;
+
