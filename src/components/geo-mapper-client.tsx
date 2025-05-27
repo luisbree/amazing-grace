@@ -41,49 +41,49 @@ const osmCategoryConfig: OSMCategoryConfig[] = [
   {
     id: 'watercourses',
     name: 'OSM Cursos de Agua',
-    overpassQueryFragment: (bboxStr) => `nwr[waterway~"^(river|stream)$"](bbox:${bboxStr});`,
+    overpassQueryFragment: (bboxStr) => `nwr[waterway~"^(river|stream)$"](${bboxStr});`,
     matcher: (tags) => tags && (tags.waterway === 'river' || tags.waterway === 'stream'),
     style: new Style({ stroke: new Stroke({ color: '#3a86ff', width: 2 }) })
   },
   {
     id: 'water_bodies',
     name: 'OSM Cuerpos de Agua',
-    overpassQueryFragment: (bboxStr) => `nwr[natural="water"](bbox:${bboxStr});\nnwr[landuse="reservoir"](bbox:${bboxStr});`,
+    overpassQueryFragment: (bboxStr) => `nwr[natural="water"](${bboxStr});\nnwr[landuse="reservoir"](${bboxStr});`,
     matcher: (tags) => tags && (tags.natural === 'water' || tags.landuse === 'reservoir'),
     style: new Style({ fill: new Fill({ color: 'rgba(58,134,255,0.4)' }), stroke: new Stroke({ color: '#3a86ff', width: 1 }) })
   },
   {
     id: 'roads_paths',
     name: 'OSM Rutas y Caminos',
-    overpassQueryFragment: (bboxStr) => `nwr[highway](bbox:${bboxStr});`,
+    overpassQueryFragment: (bboxStr) => `nwr[highway](${bboxStr});`,
     matcher: (tags) => tags && !!tags.highway,
     style: new Style({ stroke: new Stroke({ color: '#adb5bd', width: 3 }) })
   },
   {
     id: 'admin_boundaries',
     name: 'OSM Límites Admin.',
-    overpassQueryFragment: (bboxStr) => `nwr[boundary="administrative"][admin_level](bbox:${bboxStr});`,
+    overpassQueryFragment: (bboxStr) => `nwr[boundary="administrative"][admin_level](${bboxStr});`,
     matcher: (tags) => tags && tags.boundary === 'administrative' && tags.admin_level,
     style: new Style({ stroke: new Stroke({ color: '#ff006e', width: 2, lineDash: [4, 8] }) })
   },
   {
     id: 'green_areas',
     name: 'OSM Áreas Verdes',
-    overpassQueryFragment: (bboxStr) => `nwr[leisure="park"](bbox:${bboxStr});\nnwr[landuse="forest"](bbox:${bboxStr});\nnwr[natural="wood"](bbox:${bboxStr});`,
+    overpassQueryFragment: (bboxStr) => `nwr[leisure="park"](${bboxStr});\nnwr[landuse="forest"](${bboxStr});\nnwr[natural="wood"](${bboxStr});`,
     matcher: (tags) => tags && (tags.leisure === 'park' || tags.landuse === 'forest' || tags.natural === 'wood'),
     style: new Style({ fill: new Fill({ color: 'rgba(13,166,75,0.4)' }), stroke: new Stroke({ color: '#0da64b', width: 1 }) })
   },
   {
     id: 'health_centers',
     name: 'OSM Centros de Salud',
-    overpassQueryFragment: (bboxStr) => `nwr[amenity~"^(hospital|clinic|doctors|pharmacy)$"](bbox:${bboxStr});`,
+    overpassQueryFragment: (bboxStr) => `nwr[amenity~"^(hospital|clinic|doctors|pharmacy)$"](${bboxStr});`,
     matcher: (tags) => tags && ['hospital', 'clinic', 'doctors', 'pharmacy'].includes(tags.amenity),
     style: new Style({ image: new CircleStyle({ radius: 6, fill: new Fill({color: '#d90429'}), stroke: new Stroke({color: 'white', width: 1.5})})})
   },
   {
     id: 'educational',
     name: 'OSM Educacionales',
-    overpassQueryFragment: (bboxStr) => `nwr[amenity~"^(school|university|college|kindergarten)$"](bbox:${bboxStr});`,
+    overpassQueryFragment: (bboxStr) => `nwr[amenity~"^(school|university|college|kindergarten)$"](${bboxStr});`,
     matcher: (tags) => tags && ['school', 'university', 'college', 'kindergarten'].includes(tags.amenity),
     style: new Style({ image: new CircleStyle({ radius: 6, fill: new Fill({color: '#8338ec'}), stroke: new Stroke({color: 'white', width: 1.5})})})
   },
@@ -314,9 +314,8 @@ export default function GeoMapperClient() {
   }, [isDragging]);
 
   const fetchOSMData = useCallback(async (drawnFeature: OLFeature<any>) => {
-    const featureToClear = drawnFeature; // Keep a reference for the finally block
+    const featureToClear = drawnFeature; 
 
-    // Initial client-side checks before setting loading state or making API calls
     if (selectedOSMCategoryIdsRef.current.length === 0) {
       toast({ title: "Sin Categorías Seleccionadas", description: "Por favor, seleccione al menos una categoría OSM para descargar.", variant: "destructive" });
       if (drawingSourceRef.current && featureToClear && drawingSourceRef.current.getFeatures().includes(featureToClear)) {
@@ -333,8 +332,7 @@ export default function GeoMapperClient() {
       }
       return;
     }
-
-    // If initial checks pass, proceed with fetching
+    
     setIsFetchingOSM(true);
     toast({ title: "Obteniendo Datos OSM", description: "Descargando datos de OpenStreetMap..." });
 
@@ -362,14 +360,12 @@ export default function GeoMapperClient() {
       console.log("Coordinates for Overpass (s,w,n,e - after toFixed(6)):", { s_coord, w_coord, n_coord, e_coord });
 
       if (n_coord < s_coord) { 
-          const message = `Error de Bounding Box (N < S): Norte ${n_coord} es menor que Sur ${s_coord}.`;
+          const message = `Error de Bounding Box (N < S): Norte ${n_coord} es menor que Sur ${s_coord}. Extent4326_raw: ${extent4326_transformed.join(',')}`;
           console.error(message, {n_coord, s_coord, extent4326_transformed});
           throw new Error(message);
       }
-      if (e_coord < w_coord) { 
-          // This check might be problematic for areas crossing antimeridian, but Overpass usually handles it if bbox is split.
-          // For simplicity, we'll keep it. If areas cross antimeridian, this will likely fail here.
-          const message = `Error de Bounding Box (E < W): Este ${e_coord} es menor que Oeste ${w_coord}.`;
+      if (e_coord < w_coord && Math.abs(e_coord - w_coord) < 180) { // Check for normal case, ignore dateline crossing for now
+          const message = `Error de Bounding Box (E < W): Este ${e_coord} es menor que Oeste ${w_coord}. Extent4326_raw: ${extent4326_transformed.join(',')}`;
           console.error(message, {e_coord, w_coord, extent4326_transformed});
           throw new Error(message);
       }
