@@ -6,7 +6,7 @@ import type { Map as OLMap, Feature as OLFeature } from 'ol';
 import type VectorLayerType from 'ol/layer/Vector';
 import type VectorSourceType from 'ol/source/Vector';
 import type { Extent } from 'ol/extent';
-import { ChevronDown, ChevronUp, ZoomIn, Trash2, Square, PenLine, Dot, Ban, Eraser, Save, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import Draw from 'ol/interaction/Draw';
 import {KML, GeoJSON} from 'ol/format';
 import VectorLayer from 'ol/layer/Vector';
@@ -30,7 +30,7 @@ export interface MapLayer {
 
 interface OSMCategoryConfig {
   id: string;
-  namePrefix: string;
+  name: string; // Changed from namePrefix to name
   overpassQueryFragment: (bboxStr: string) => string;
   matcher: (tags: any) => boolean;
   style: Style;
@@ -40,54 +40,56 @@ interface OSMCategoryConfig {
 const osmCategoryConfig: OSMCategoryConfig[] = [
   {
     id: 'watercourses',
-    namePrefix: 'OSM Watercourses',
+    name: 'OSM Cursos de Agua',
     overpassQueryFragment: (bboxStr) => `nwr[waterway~"^(river|stream)$"](bbox:${bboxStr});`,
     matcher: (tags) => tags && (tags.waterway === 'river' || tags.waterway === 'stream'),
     style: new Style({ stroke: new Stroke({ color: '#3a86ff', width: 2 }) })
   },
   {
     id: 'water_bodies',
-    namePrefix: 'OSM Water Bodies',
+    name: 'OSM Cuerpos de Agua',
     overpassQueryFragment: (bboxStr) => `nwr[natural="water"](bbox:${bboxStr});\nnwr[landuse="reservoir"](bbox:${bboxStr});`,
     matcher: (tags) => tags && (tags.natural === 'water' || tags.landuse === 'reservoir'),
     style: new Style({ fill: new Fill({ color: 'rgba(58,134,255,0.4)' }), stroke: new Stroke({ color: '#3a86ff', width: 1 }) })
   },
   {
     id: 'roads_paths',
-    namePrefix: 'OSM Roads & Paths',
+    name: 'OSM Rutas y Caminos',
     overpassQueryFragment: (bboxStr) => `nwr[highway](bbox:${bboxStr});`,
     matcher: (tags) => tags && !!tags.highway,
     style: new Style({ stroke: new Stroke({ color: '#adb5bd', width: 3 }) })
   },
   {
     id: 'admin_boundaries',
-    namePrefix: 'OSM Admin Boundaries',
+    name: 'OSM Límites Admin.',
     overpassQueryFragment: (bboxStr) => `nwr[boundary="administrative"][admin_level](bbox:${bboxStr});`,
     matcher: (tags) => tags && tags.boundary === 'administrative' && tags.admin_level,
     style: new Style({ stroke: new Stroke({ color: '#ff006e', width: 2, lineDash: [4, 8] }) })
   },
   {
     id: 'green_areas',
-    namePrefix: 'OSM Green Areas',
+    name: 'OSM Áreas Verdes',
     overpassQueryFragment: (bboxStr) => `nwr[leisure="park"](bbox:${bboxStr});\nnwr[landuse="forest"](bbox:${bboxStr});\nnwr[natural="wood"](bbox:${bboxStr});`,
     matcher: (tags) => tags && (tags.leisure === 'park' || tags.landuse === 'forest' || tags.natural === 'wood'),
     style: new Style({ fill: new Fill({ color: 'rgba(13,166,75,0.4)' }), stroke: new Stroke({ color: '#0da64b', width: 1 }) })
   },
   {
     id: 'health_centers',
-    namePrefix: 'OSM Health Centers',
+    name: 'OSM Centros de Salud',
     overpassQueryFragment: (bboxStr) => `nwr[amenity~"^(hospital|clinic|doctors|pharmacy)$"](bbox:${bboxStr});`,
     matcher: (tags) => tags && ['hospital', 'clinic', 'doctors', 'pharmacy'].includes(tags.amenity),
     style: new Style({ image: new CircleStyle({ radius: 6, fill: new Fill({color: '#d90429'}), stroke: new Stroke({color: 'white', width: 1.5})})})
   },
   {
     id: 'educational',
-    namePrefix: 'OSM Educational',
+    name: 'OSM Educacionales',
     overpassQueryFragment: (bboxStr) => `nwr[amenity~"^(school|university|college|kindergarten)$"](bbox:${bboxStr});`,
     matcher: (tags) => tags && ['school', 'university', 'college', 'kindergarten'].includes(tags.amenity),
     style: new Style({ image: new CircleStyle({ radius: 6, fill: new Fill({color: '#8338ec'}), stroke: new Stroke({color: 'white', width: 1.5})})})
   },
 ];
+
+const osmCategoriesForSelection = osmCategoryConfig.map(({ id, name }) => ({ id, name }));
 
 
 export default function GeoMapperClient() {
@@ -113,6 +115,9 @@ export default function GeoMapperClient() {
 
   const [activeDrawTool, setActiveDrawTool] = useState<string | null>(null);
   const [isFetchingOSM, setIsFetchingOSM] = useState(false);
+  const [selectedOSMCategoryIds, setSelectedOSMCategoryIds] = useState<string[]>(
+    () => osmCategoryConfig.map(cat => cat.id) // All selected by default
+  );
 
 
   const addLayer = useCallback((newLayer: MapLayer) => {
@@ -121,7 +126,7 @@ export default function GeoMapperClient() {
 
   const removeLayer = useCallback((layerId: string) => {
     setLayers(prevLayers => prevLayers.filter(layer => layer.id !== layerId));
-    toast({ title: "Layer Removed", description: "The layer has been removed from the map." });
+    toast({ title: "Capa Eliminada", description: "La capa ha sido eliminada del mapa." });
   }, [toast]);
 
   const toggleLayerVisibility = useCallback((layerId: string) => {
@@ -136,11 +141,10 @@ export default function GeoMapperClient() {
     );
   }, []);
 
-  const setMapInstance = useCallback((mapInstance: OLMap) => {
+ const setMapInstance = useCallback((mapInstance: OLMap) => {
     mapRef.current = mapInstance;
 
-    if (mapRef.current && !drawingLayerRef.current) { // Initialize drawing layer only once
-      // First, verify that our ref objects are indeed ref objects.
+    if (mapRef.current && !drawingLayerRef.current) { 
       if (!drawingSourceRef || typeof drawingSourceRef !== 'object' || !('current' in drawingSourceRef)) {
         console.error("CRITICAL: drawingSourceRef is not a valid React ref object. Drawing layer cannot be initialized.");
         return; 
@@ -149,8 +153,7 @@ export default function GeoMapperClient() {
         console.error("CRITICAL: drawingLayerRef is not a valid React ref object. Drawing layer cannot be initialized.");
         return; 
       }
-
-      // At this point, drawingSourceRef and drawingLayerRef are known to be valid ref objects.
+      
       drawingSourceRef.current = new VectorSource({ wrapX: false });
       drawingLayerRef.current = new VectorLayer({
         source: drawingSourceRef.current,
@@ -163,9 +166,8 @@ export default function GeoMapperClient() {
             stroke: new Stroke({ color: '#ffffff', width: 1.5 })
           }),
         }),
-        zIndex: 1000 // Ensure drawing layer is on top
+        zIndex: 1000 
       });
-      
       mapRef.current.addLayer(drawingLayerRef.current);
     }
   }, []);
@@ -175,25 +177,20 @@ export default function GeoMapperClient() {
     if (!mapRef.current) return;
     const currentMap = mapRef.current;
 
-    // Get the base OSM layer
     const baseLayer = currentMap.getLayers().getArray().find(l => l.get('name') === 'OSMBaseLayer');
     
-    // Get all vector layers currently on the map, excluding the drawing layer
     const olMapVectorLayers = currentMap.getLayers().getArray()
       .filter(l => l !== baseLayer && l !== drawingLayerRef.current) as VectorLayerType<VectorSourceType<OLFeature<any>>>[];
 
-    // Remove existing vector layers (excluding drawing layer)
     olMapVectorLayers.forEach(olMapLayer => {
         currentMap.removeLayer(olMapLayer);
     });
     
-    // Add/update layers from state
     layers.forEach(appLayer => {
       currentMap.addLayer(appLayer.olLayer);
       appLayer.olLayer.setVisible(appLayer.visible);
     });
 
-    // Ensure drawing layer is on top of other vector layers if it exists
     if (drawingLayerRef.current) {
       drawingLayerRef.current.setZIndex(layers.length + 1); 
     }
@@ -217,7 +214,7 @@ export default function GeoMapperClient() {
       }
       setSelectedFeatureAttributes(attributesToShow);
       featureFound = true;
-      toast({ title: "Feature Selected", description: "Attributes shown in panel." });
+      toast({ title: "Entidad Seleccionada", description: "Atributos mostrados en el panel." });
       return true; 
     });
     if (!featureFound) setSelectedFeatureAttributes(null);
@@ -238,7 +235,7 @@ export default function GeoMapperClient() {
 
   const clearSelectedFeature = useCallback(() => {
     setSelectedFeatureAttributes(null);
-    toast({ title: "Selection Cleared", description: "No feature is selected." });
+    toast({ title: "Selección Limpiada", description: "Ninguna entidad seleccionada." });
   }, [toast]);
 
   const zoomToLayerExtent = useCallback((layerId: string) => {
@@ -250,12 +247,12 @@ export default function GeoMapperClient() {
         const extent: Extent = source.getExtent();
         if (extent && extent.every(isFinite) && (extent[2] - extent[0] > 0) && (extent[3] - extent[1] > 0)) {
           mapRef.current.getView().fit(extent, { padding: [50, 50, 50, 50], duration: 1000, maxZoom: 18 });
-          toast({ title: "Zoom to Layer", description: `Showing extent of ${layer.name}.` });
+          toast({ title: "Zoom a Capa", description: `Mostrando extensión de ${layer.name}.` });
         } else {
-          toast({ title: "Invalid Extent", description: `Layer "${layer.name}" might be empty or have an invalid extent.`, variant: "destructive" });
+          toast({ title: "Extensión Inválida", description: `Capa "${layer.name}" podría estar vacía o tener una extensión inválida.`, variant: "destructive" });
         }
       } else {
-        toast({ title: "Empty Layer", description: `Layer "${layer.name}" contains no features.`, variant: "destructive" });
+        toast({ title: "Capa Vacía", description: `Capa "${layer.name}" no contiene entidades.`, variant: "destructive" });
       }
     }
   }, [layers, toast]);
@@ -286,7 +283,6 @@ export default function GeoMapperClient() {
       const panelRect = panelRef.current.getBoundingClientRect();
 
       if (panelRect.width === 0 || panelRect.height === 0 || mapRect.width === 0 || mapRect.height === 0) {
-        // console.warn("Panel or map dimensions are zero, cannot restrict drag.");
         return;
       }
 
@@ -294,7 +290,6 @@ export default function GeoMapperClient() {
       newY = Math.max(0, Math.min(newY, mapRect.height - panelRect.height));
 
       if (isNaN(newX) || isNaN(newY)) {
-        // console.error("Calculated panel position is NaN.");
         return;
       }
       setPosition({ x: newX, y: newY });
@@ -314,25 +309,41 @@ export default function GeoMapperClient() {
     };
   }, [isDragging]);
 
-  // OSM Data Fetching
   const fetchOSMData = useCallback(async (drawnFeature: OLFeature<any>) => {
     if (!mapRef.current) return;
+
+    if (selectedOSMCategoryIds.length === 0) {
+      toast({ title: "Sin Categorías Seleccionadas", description: "Por favor, seleccione al menos una categoría OSM para descargar.", variant: "destructive" });
+      if (drawingSourceRef.current && drawnFeature) {
+         const drawnFeatures = drawingSourceRef.current.getFeatures();
+         if (drawnFeatures.includes(drawnFeature)) {
+            drawingSourceRef.current.removeFeature(drawnFeature);
+         }
+      }
+      return;
+    }
+
     const geometry = drawnFeature.getGeometry();
     if (!geometry || geometry.getType() !== 'Polygon') {
-      toast({ title: "Invalid Geometry", description: "Please draw a polygon to fetch OSM data.", variant: "destructive" });
+      toast({ title: "Geometría Inválida", description: "Por favor, dibuje un polígono para obtener datos OSM.", variant: "destructive" });
+      if (drawingSourceRef.current && drawnFeature) {
+         const drawnFeatures = drawingSourceRef.current.getFeatures();
+         if (drawnFeatures.includes(drawnFeature)) {
+            drawingSourceRef.current.removeFeature(drawnFeature);
+         }
+      }
       return;
     }
 
     setIsFetchingOSM(true);
-    toast({ title: "Fetching OSM Data", description: "Downloading data from OpenStreetMap..." });
+    toast({ title: "Obteniendo Datos OSM", description: "Descargando datos de OpenStreetMap..." });
 
     try {
       const extent3857 = geometry.getExtent();
       const extent4326 = transformExtent(extent3857, 'EPSG:3857', 'EPSG:4326');
       
       if (!extent4326 || extent4326.some(val => !isFinite(val))) {
-          console.error("Failed to transform drawn area to valid geographic coordinates. Extent4326:", extent4326);
-          throw new Error("Failed to transform drawn area to valid geographic coordinates.");
+          throw new Error("Fallo al transformar área dibujada a coordenadas geográficas válidas.");
       }
 
       const s_coord = parseFloat(extent4326[1].toFixed(6));
@@ -341,22 +352,18 @@ export default function GeoMapperClient() {
       const e_coord = parseFloat(extent4326[2].toFixed(6));
 
       if (n_coord < s_coord) { 
-          console.error(`Invalid bbox: North (${n_coord}) is South of South (${s_coord}). Original extent4326:`, extent4326, "Drawn feature extent3857:", extent3857);
-          throw new Error("Drawn area resulted in an invalid bounding box: North coordinate is south of the South coordinate.");
+          throw new Error("Área dibujada resultó en un bounding box inválido: Coordenada Norte es sur de la coordenada Sur.");
       }
       if (e_coord < w_coord) { 
-          console.error(`Invalid bbox: East (${e_coord}) is West of West (${w_coord}). Original extent4326:`, extent4326, "Drawn feature extent3857:", extent3857);
-          throw new Error("Drawn area resulted in an invalid bounding box: East coordinate is west of the West coordinate.");
+          throw new Error("Área dibujada resultó en un bounding box inválido: Coordenada Este es oeste de la coordenada Oeste.");
       }
+            
+      const bboxStr = `${s_coord},${w_coord},${n_coord},${e_coord}`;
       
-      console.log("Extent4326 after checks and formatting:", {s: s_coord, w: w_coord, n: n_coord, e: e_coord});
-      
-      const bboxStr = `${s_coord},${w_coord},${n_coord},${e_coord}`; // s,w,n,e
-      console.log("Constructed bboxStr for Overpass API:", bboxStr);
-
-
       let queryParts: string[] = [];
-      osmCategoryConfig.forEach(cat => {
+      const categoriesToFetch = osmCategoryConfig.filter(cat => selectedOSMCategoryIds.includes(cat.id));
+
+      categoriesToFetch.forEach(cat => {
         queryParts.push(cat.overpassQueryFragment(bboxStr));
       });
 
@@ -378,14 +385,14 @@ export default function GeoMapperClient() {
       if (!response.ok) {
         const errorBody = await response.text();
         console.error("Overpass API error details:", errorBody);
-        throw new Error(`Overpass API error: ${response.status} ${response.statusText}`);
+        throw new Error(`Error Overpass API: ${response.status} ${response.statusText}`);
       }
 
       const osmData = await response.json();
       const geojsonData = osmtogeojson(osmData) as any; 
 
       let featuresAddedCount = 0;
-      osmCategoryConfig.forEach(category => {
+      categoriesToFetch.forEach(category => {
         const categoryFeaturesGeoJSON = {
           type: "FeatureCollection",
           features: geojsonData.features.filter((feature: any) => category.matcher(feature.properties))
@@ -404,21 +411,21 @@ export default function GeoMapperClient() {
               style: category.style
             });
             const layerId = `osm-${category.id}-${Date.now()}`;
-            addLayer({ id: layerId, name: `${category.namePrefix} (${olFeatures.length})`, olLayer: vectorLayer, visible: true });
+            addLayer({ id: layerId, name: `${category.name} (${olFeatures.length})`, olLayer: vectorLayer, visible: true });
             featuresAddedCount += olFeatures.length;
           }
         }
       });
 
       if (featuresAddedCount > 0) {
-        toast({ title: "OSM Data Loaded", description: `${featuresAddedCount} features added to the map.` });
+        toast({ title: "Datos OSM Cargados", description: `${featuresAddedCount} entidades añadidas al mapa.` });
       } else {
-        toast({ title: "No OSM Data Found", description: "No features matched your criteria in the selected area." });
+        toast({ title: "Sin Datos OSM Encontrados", description: "Ninguna entidad coincidió con sus criterios en el área seleccionada." });
       }
 
     } catch (error: any) {
-      console.error("Error fetching OSM data:", error);
-      toast({ title: "Error Fetching OSM Data", description: error.message || "An unknown error occurred.", variant: "destructive" });
+      console.error("Error obteniendo datos OSM:", error);
+      toast({ title: "Error Obteniendo Datos OSM", description: error.message || "Ocurrió un error desconocido.", variant: "destructive" });
     } finally {
       setIsFetchingOSM(false);
       if (drawingSourceRef.current && drawnFeature) {
@@ -428,7 +435,7 @@ export default function GeoMapperClient() {
         }
       }
     }
-  }, [toast, addLayer]);
+  }, [toast, addLayer, selectedOSMCategoryIds]);
 
 
   const toggleDrawingTool = useCallback((toolType: 'Polygon' | 'LineString' | 'Point') => {
@@ -453,6 +460,8 @@ export default function GeoMapperClient() {
         if (toolType === 'Polygon') { 
            fetchOSMData(event.feature);
         }
+        // For LineString and Point, we might not fetch OSM data, or handle differently.
+        // For now, only Polygon triggers fetchOSMData.
       });
 
       mapRef.current.addInteraction(newDrawInteraction);
@@ -473,13 +482,13 @@ export default function GeoMapperClient() {
   const clearDrawnFeatures = useCallback(() => {
     if (drawingSourceRef.current) {
       drawingSourceRef.current.clear();
-      toast({ title: "Drawings Cleared", description: "All drawings have been removed." });
+      toast({ title: "Dibujos Limpiados", description: "Todos los dibujos han sido eliminados." });
     }
   }, [toast]);
 
   const saveDrawnFeaturesAsKML = useCallback(() => {
     if (!drawingSourceRef.current || drawingSourceRef.current.getFeatures().length === 0) {
-      toast({ title: "No Drawings", description: "Nothing drawn to save.", variant: "destructive" });
+      toast({ title: "Sin Dibujos", description: "Nada dibujado para guardar.", variant: "destructive" });
       return;
     }
     const features = drawingSourceRef.current.getFeatures();
@@ -497,10 +506,10 @@ export default function GeoMapperClient() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(link.href);
-      toast({ title: "Drawings Saved", description: "Drawings saved as drawings.kml." });
+      toast({ title: "Dibujos Guardados", description: "Dibujos guardados como drawings.kml." });
     } catch (error) {
-      console.error("Error saving KML:", error);
-      toast({ title: "Error Saving KML", description: "Could not save drawings.", variant: "destructive" });
+      console.error("Error guardando KML:", error);
+      toast({ title: "Error Guardando KML", description: "No se pudieron guardar los dibujos.", variant: "destructive" });
     }
   }, [toast]);
 
@@ -518,7 +527,7 @@ export default function GeoMapperClient() {
           ref={panelRef}
           className="absolute bg-gray-800/60 backdrop-blur-md rounded-lg shadow-xl flex flex-col text-white overflow-hidden z-30"
           style={{
-             width: '350px',
+             width: '350px', // Adjusted width
              top: `${position.y}px`,
              left: `${position.x}px`,
           }}
@@ -527,15 +536,15 @@ export default function GeoMapperClient() {
             className="p-2 bg-gray-700/80 flex items-center justify-between cursor-grab rounded-t-lg"
             onMouseDown={handleMouseDown}
           >
-            <h2 className="text-sm font-semibold">Map Tools</h2>
+            <h2 className="text-sm font-semibold">Herramientas del Mapa</h2>
             <Button variant="ghost" size="icon" onClick={toggleCollapse} className="h-6 w-6 text-white hover:bg-gray-600/80">
               {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-              <span className="sr-only">{isCollapsed ? 'Expand' : 'Collapse'}</span>
+              <span className="sr-only">{isCollapsed ? 'Expandir' : 'Colapsar'}</span>
             </Button>
           </div>
 
           {!isCollapsed && (
-            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}> {/* Max height for scroll */}
               <MapControls
                   onAddLayer={addLayer}
                   layers={layers}
@@ -552,6 +561,9 @@ export default function GeoMapperClient() {
                   onClearDrawnFeatures={clearDrawnFeatures}
                   onSaveDrawnFeaturesAsKML={saveDrawnFeaturesAsKML}
                   isFetchingOSM={isFetchingOSM}
+                  osmCategoriesForSelection={osmCategoriesForSelection}
+                  selectedOSMCategoryIds={selectedOSMCategoryIds}
+                  onSelectedOSMCategoriesChange={setSelectedOSMCategoryIds}
               />
             </div>
           )}
@@ -561,6 +573,3 @@ export default function GeoMapperClient() {
     </div>
   );
 }
-    
-
-    
