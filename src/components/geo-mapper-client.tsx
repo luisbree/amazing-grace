@@ -73,6 +73,7 @@ export default function GeoMapperClient() {
     });
 
     layers.forEach(appLayer => {
+      // Ensure the layer isn't already on the map to prevent errors, though the clear & re-add should handle this.
       const existingOlLayer = currentMap.getLayers().getArray().find(ol => ol === appLayer.olLayer);
       if (!existingOlLayer) {
         currentMap.addLayer(appLayer.olLayer);
@@ -158,7 +159,7 @@ export default function GeoMapperClient() {
       panelY: position.y,
     };
     console.log("Drag Start:", dragStartRef.current);
-    e.preventDefault();
+    e.preventDefault(); // Prevent text selection during drag
   }, [position.x, position.y]);
 
   useEffect(() => {
@@ -173,17 +174,23 @@ export default function GeoMapperClient() {
 
       const mapRect = mapAreaRef.current.getBoundingClientRect();
       const panelRect = panelRef.current.getBoundingClientRect();
-
+      
+      // Defensive check for panelRect dimensions
       if (panelRect.width === 0 || panelRect.height === 0 || mapRect.width === 0 || mapRect.height === 0) {
         console.warn("Panel or map dimensions are zero during drag. Aborting move.", { panelRect, mapRect });
+        // Potentially stop dragging if dimensions are invalid to prevent issues
+        // setIsDragging(false); 
         return; 
       }
       
       newX = Math.max(0, Math.min(newX, mapRect.width - panelRect.width));
       newY = Math.max(0, Math.min(newY, mapRect.height - panelRect.height));
 
+      // Defensive check for NaN positions
       if (isNaN(newX) || isNaN(newY)) {
         console.error("Calculated NaN position during drag. Aborting move.", { newX, newY, dx, dy, panelX: dragStartRef.current.panelX, panelY: dragStartRef.current.panelY, panelRect, mapRect });
+        // Potentially stop dragging if position is invalid
+        // setIsDragging(false);
         return;
       }
       // console.log("Dragging:", { newX, newY, panelWidth: panelRect.width, panelHeight: panelRect.height });
@@ -209,7 +216,7 @@ export default function GeoMapperClient() {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging]);
+  }, [isDragging]); // Dependencies: isDragging, mapAreaRef, panelRef (refs are stable, so primarily isDragging)
 
 
   return (
@@ -223,14 +230,18 @@ export default function GeoMapperClient() {
         
         <div
           ref={panelRef}
-          className="absolute z-[50] bg-blue-700/70 backdrop-blur-md rounded-lg shadow-xl flex flex-col text-white overflow-hidden"
+          className="absolute rounded-lg shadow-xl flex flex-col text-white overflow-hidden"
           style={{
             width: '350px',
-            transform: `translate(${position.x}px, ${position.y}px)`,
+            top: `${position.y}px`,
+            left: `${position.x}px`,
+            background: 'rgba(255, 0, 0, 0.7)', // Bright red, semi-transparent
+            zIndex: 9999, // Very high z-index
+            padding: '0px', // Remove padding if card manages it
           }}
         >
           <div 
-            className="p-2 bg-gray-700/80 flex items-center justify-between cursor-grab rounded-t-lg"
+            className="p-2 bg-gray-700/80 flex items-center justify-between cursor-grab rounded-t-lg" // Ensure this has some background
             onMouseDown={handleMouseDown}
           >
             <h2 className="text-sm font-semibold">Herramientas del Mapa</h2>
@@ -241,7 +252,8 @@ export default function GeoMapperClient() {
           </div>
 
           {!isCollapsed && (
-            <div className="flex-1 min-h-0 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+            <div className="flex-1 min-h-0 overflow-y-auto bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' /* Adjust based on header and other elements */ }}>
+              {/* MapControls itself should have a transparent background, its Cards can have their own */}
               <MapControls 
                   onAddLayer={addLayer}
                   layers={layers}
