@@ -102,7 +102,6 @@ export default function GeoMapperClient() {
   const [selectedFeatureAttributes, setSelectedFeatureAttributes] = useState<Record<string, any> | null>(null);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
-
   const [position, setPosition] = useState({ x: 16, y: 16 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0, panelX: 0, panelY: 0 });
@@ -317,26 +316,26 @@ export default function GeoMapperClient() {
   const fetchOSMData = useCallback(async (drawnFeature: OLFeature<any>) => {
     if (!mapRef.current) return;
     const currentSelectedIds = selectedOSMCategoryIdsRef.current;
-
+    const featureToClear = drawnFeature; // Keep a reference to remove it in catch/finally
 
     if (currentSelectedIds.length === 0) {
       toast({ title: "Sin Categorías Seleccionadas", description: "Por favor, seleccione al menos una categoría OSM para descargar.", variant: "destructive" });
-      if (drawingSourceRef.current && drawnFeature) {
+      if (drawingSourceRef.current && featureToClear) {
          const drawnFeatures = drawingSourceRef.current.getFeatures();
-         if (drawnFeatures.includes(drawnFeature)) {
-            drawingSourceRef.current.removeFeature(drawnFeature);
+         if (drawnFeatures.includes(featureToClear)) {
+            drawingSourceRef.current.removeFeature(featureToClear);
          }
       }
       return;
     }
 
-    const geometry = drawnFeature.getGeometry();
+    const geometry = featureToClear.getGeometry();
     if (!geometry || geometry.getType() !== 'Polygon') {
       toast({ title: "Geometría Inválida", description: "Por favor, dibuje un polígono para obtener datos OSM.", variant: "destructive" });
-      if (drawingSourceRef.current && drawnFeature) {
+      if (drawingSourceRef.current && featureToClear) {
          const drawnFeatures = drawingSourceRef.current.getFeatures();
-         if (drawnFeatures.includes(drawnFeature)) {
-            drawingSourceRef.current.removeFeature(drawnFeature);
+         if (drawnFeatures.includes(featureToClear)) {
+            drawingSourceRef.current.removeFeature(featureToClear);
          }
       }
       return;
@@ -347,29 +346,36 @@ export default function GeoMapperClient() {
 
     try {
       const extent3857 = geometry.getExtent();
-      const extent4326 = transformExtent(extent3857, 'EPSG:3857', 'EPSG:4326');
+      console.log("Extent3857 (Source):", extent3857);
+      if (!extent3857 || extent3857.some(val => !isFinite(val)) || extent3857[2] < extent3857[0] || extent3857[3] < extent3857[1]) {
+          console.error("Invalid extent in EPSG:3857:", extent3857);
+          throw new Error("Área dibujada tiene una extensión inválida antes de la transformación.");
+      }
+
+      const extent4326_transformed = transformExtent(extent3857, 'EPSG:3857', 'EPSG:4326');
+      console.log("Extent4326 (Transformed, raw):", extent4326_transformed);
       
-      if (!extent4326 || extent4326.some(val => !isFinite(val))) {
-          console.error("Fallo al transformar extent. Extent3857:", extent3857, "Extent4326:", extent4326);
+      if (!extent4326_transformed || extent4326_transformed.some(val => !isFinite(val))) {
+          console.error("Fallo al transformar extent. Extent3857:", extent3857, "Extent4326_transformed:", extent4326_transformed);
           throw new Error("Fallo al transformar área dibujada a coordenadas geográficas válidas.");
       }
 
-      const s_coord = parseFloat(extent4326[1].toFixed(6));
-      const w_coord = parseFloat(extent4326[0].toFixed(6));
-      const n_coord = parseFloat(extent4326[3].toFixed(6));
-      const e_coord = parseFloat(extent4326[2].toFixed(6));
+      const s_coord = parseFloat(extent4326_transformed[1].toFixed(6));
+      const w_coord = parseFloat(extent4326_transformed[0].toFixed(6));
+      const n_coord = parseFloat(extent4326_transformed[3].toFixed(6));
+      const e_coord = parseFloat(extent4326_transformed[2].toFixed(6));
 
-      console.log("Extent4326 after checks:", extent4326);
-      console.log("North:", n_coord, "South:", s_coord, "East:", e_coord, "West:", w_coord);
-
+      console.log("Coordinates for Overpass (s,w,n,e - after toFixed(6)):", { s_coord, w_coord, n_coord, e_coord });
 
       if (n_coord < s_coord) { 
-          console.error("Bounding box validation failed: North coordinate is south of South coordinate.", {n_coord, s_coord});
-          throw new Error("Área dibujada resultó en un bounding box inválido: Coordenada Norte es sur de la coordenada Sur.");
+          const message = `Error de Bounding Box (N < S): Norte ${n_coord} es menor que Sur ${s_coord}.`;
+          console.error(message, {n_coord, s_coord, extent4326_transformed});
+          throw new Error(message);
       }
       if (e_coord < w_coord) { 
-          console.error("Bounding box validation failed: East coordinate is west of West coordinate.", {e_coord, w_coord});
-          throw new Error("Área dibujada resultó en un bounding box inválido: Coordenada Este es oeste de la coordenada Oeste.");
+          const message = `Error de Bounding Box (E < W): Este ${e_coord} es menor que Oeste ${w_coord}.`;
+          console.error(message, {e_coord, w_coord, extent4326_transformed});
+          throw new Error(message);
       }
             
       const bboxStr = `${s_coord},${w_coord},${n_coord},${e_coord}`;
@@ -377,7 +383,6 @@ export default function GeoMapperClient() {
       
       let queryParts: string[] = [];
       const categoriesToFetch = osmCategoryConfig.filter(cat => currentSelectedIds.includes(cat.id));
-
 
       categoriesToFetch.forEach(cat => {
         queryParts.push(cat.overpassQueryFragment(bboxStr));
@@ -440,14 +445,23 @@ export default function GeoMapperClient() {
       }
 
     } catch (error: any) {
-      console.error("Error obteniendo datos OSM:", error);
+      console.error("Error en fetchOSMData (puede ser local o de API):", error);
       toast({ title: "Error Obteniendo Datos OSM", description: error.message || "Ocurrió un error desconocido.", variant: "destructive" });
+       // Ensure drawn feature is removed on any error caught here
+      if (drawingSourceRef.current && featureToClear) {
+         const currentFeatures = drawingSourceRef.current.getFeatures();
+         if (currentFeatures.includes(featureToClear)) {
+            drawingSourceRef.current.removeFeature(featureToClear);
+         }
+      }
     } finally {
       setIsFetchingOSM(false);
-      if (drawingSourceRef.current && drawnFeature) {
-        const drawnFeatures = drawingSourceRef.current.getFeatures();
-        if (drawnFeatures.includes(drawnFeature)) {
-            drawingSourceRef.current.removeFeature(drawnFeature);
+      // Ensure the feature that triggered the fetch is always removed from the drawing layer,
+      // unless it was already removed in the catch block for a client-side validation error.
+      if (drawingSourceRef.current && featureToClear) {
+        const currentDrawnFeatures = drawingSourceRef.current.getFeatures();
+        if (currentDrawnFeatures.includes(featureToClear)) {
+            drawingSourceRef.current.removeFeature(featureToClear);
         }
       }
     }
@@ -476,8 +490,6 @@ export default function GeoMapperClient() {
         if (toolType === 'Polygon') { 
            fetchOSMData(event.feature);
         }
-        // For LineString and Point, we might not fetch OSM data, or handle differently.
-        // For now, only Polygon triggers fetchOSMData.
       });
 
       mapRef.current.addInteraction(newDrawInteraction);
@@ -560,7 +572,7 @@ export default function GeoMapperClient() {
           </div>
 
           {!isCollapsed && (
-            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}> {/* Adjusted max-height */}
               <MapControls
                   onAddLayer={addLayer}
                   layers={layers}
@@ -589,4 +601,3 @@ export default function GeoMapperClient() {
     </div>
   );
 }
-
