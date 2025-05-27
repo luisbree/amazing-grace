@@ -314,17 +314,13 @@ export default function GeoMapperClient() {
   }, [isDragging]);
 
   const fetchOSMData = useCallback(async (drawnFeature: OLFeature<any>) => {
-    if (!mapRef.current) return;
-    const currentSelectedIds = selectedOSMCategoryIdsRef.current;
-    const featureToClear = drawnFeature; // Keep a reference to remove it in catch/finally
+    const featureToClear = drawnFeature; // Keep a reference for the finally block
 
-    if (currentSelectedIds.length === 0) {
+    // Initial client-side checks before setting loading state or making API calls
+    if (selectedOSMCategoryIdsRef.current.length === 0) {
       toast({ title: "Sin Categorías Seleccionadas", description: "Por favor, seleccione al menos una categoría OSM para descargar.", variant: "destructive" });
-      if (drawingSourceRef.current && featureToClear) {
-         const drawnFeatures = drawingSourceRef.current.getFeatures();
-         if (drawnFeatures.includes(featureToClear)) {
-            drawingSourceRef.current.removeFeature(featureToClear);
-         }
+      if (drawingSourceRef.current && featureToClear && drawingSourceRef.current.getFeatures().includes(featureToClear)) {
+         drawingSourceRef.current.removeFeature(featureToClear);
       }
       return;
     }
@@ -332,24 +328,22 @@ export default function GeoMapperClient() {
     const geometry = featureToClear.getGeometry();
     if (!geometry || geometry.getType() !== 'Polygon') {
       toast({ title: "Geometría Inválida", description: "Por favor, dibuje un polígono para obtener datos OSM.", variant: "destructive" });
-      if (drawingSourceRef.current && featureToClear) {
-         const drawnFeatures = drawingSourceRef.current.getFeatures();
-         if (drawnFeatures.includes(featureToClear)) {
-            drawingSourceRef.current.removeFeature(featureToClear);
-         }
+      if (drawingSourceRef.current && featureToClear && drawingSourceRef.current.getFeatures().includes(featureToClear)) {
+         drawingSourceRef.current.removeFeature(featureToClear);
       }
       return;
     }
 
+    // If initial checks pass, proceed with fetching
     setIsFetchingOSM(true);
     toast({ title: "Obteniendo Datos OSM", description: "Descargando datos de OpenStreetMap..." });
 
     try {
       const extent3857 = geometry.getExtent();
       console.log("Extent3857 (Source):", extent3857);
-      if (!extent3857 || extent3857.some(val => !isFinite(val)) || extent3857[2] < extent3857[0] || extent3857[3] < extent3857[1]) {
+      if (!extent3857 || extent3857.some(val => !isFinite(val)) || (extent3857[2] - extent3857[0] <= 0 && extent3857[2] !== extent3857[0]) || (extent3857[3] - extent3857[1] <= 0 && extent3857[3] !== extent3857[1])) {
           console.error("Invalid extent in EPSG:3857:", extent3857);
-          throw new Error("Área dibujada tiene una extensión inválida antes de la transformación.");
+          throw new Error("Área dibujada tiene una extensión inválida antes de la transformación (inválida o puntos/líneas).");
       }
 
       const extent4326_transformed = transformExtent(extent3857, 'EPSG:3857', 'EPSG:4326');
@@ -359,7 +353,7 @@ export default function GeoMapperClient() {
           console.error("Fallo al transformar extent. Extent3857:", extent3857, "Extent4326_transformed:", extent4326_transformed);
           throw new Error("Fallo al transformar área dibujada a coordenadas geográficas válidas.");
       }
-
+      
       const s_coord = parseFloat(extent4326_transformed[1].toFixed(6));
       const w_coord = parseFloat(extent4326_transformed[0].toFixed(6));
       const n_coord = parseFloat(extent4326_transformed[3].toFixed(6));
@@ -373,16 +367,19 @@ export default function GeoMapperClient() {
           throw new Error(message);
       }
       if (e_coord < w_coord) { 
+          // This check might be problematic for areas crossing antimeridian, but Overpass usually handles it if bbox is split.
+          // For simplicity, we'll keep it. If areas cross antimeridian, this will likely fail here.
           const message = `Error de Bounding Box (E < W): Este ${e_coord} es menor que Oeste ${w_coord}.`;
           console.error(message, {e_coord, w_coord, extent4326_transformed});
           throw new Error(message);
       }
+      console.log("Extent4326 after checks:", {s_coord, w_coord, n_coord, e_coord});
             
       const bboxStr = `${s_coord},${w_coord},${n_coord},${e_coord}`;
       console.log("Constructed bboxStr for Overpass API:", bboxStr);
       
       let queryParts: string[] = [];
-      const categoriesToFetch = osmCategoryConfig.filter(cat => currentSelectedIds.includes(cat.id));
+      const categoriesToFetch = osmCategoryConfig.filter(cat => selectedOSMCategoryIdsRef.current.includes(cat.id));
 
       categoriesToFetch.forEach(cat => {
         queryParts.push(cat.overpassQueryFragment(bboxStr));
@@ -445,24 +442,12 @@ export default function GeoMapperClient() {
       }
 
     } catch (error: any) {
-      console.error("Error en fetchOSMData (puede ser local o de API):", error);
+      console.error("Error en fetchOSMData (procesamiento o API):", error);
       toast({ title: "Error Obteniendo Datos OSM", description: error.message || "Ocurrió un error desconocido.", variant: "destructive" });
-       // Ensure drawn feature is removed on any error caught here
-      if (drawingSourceRef.current && featureToClear) {
-         const currentFeatures = drawingSourceRef.current.getFeatures();
-         if (currentFeatures.includes(featureToClear)) {
-            drawingSourceRef.current.removeFeature(featureToClear);
-         }
-      }
     } finally {
       setIsFetchingOSM(false);
-      // Ensure the feature that triggered the fetch is always removed from the drawing layer,
-      // unless it was already removed in the catch block for a client-side validation error.
-      if (drawingSourceRef.current && featureToClear) {
-        const currentDrawnFeatures = drawingSourceRef.current.getFeatures();
-        if (currentDrawnFeatures.includes(featureToClear)) {
-            drawingSourceRef.current.removeFeature(featureToClear);
-        }
+      if (drawingSourceRef.current && featureToClear && drawingSourceRef.current.getFeatures().includes(featureToClear)) {
+        drawingSourceRef.current.removeFeature(featureToClear);
       }
     }
   }, [toast, addLayer]);
@@ -601,3 +586,4 @@ export default function GeoMapperClient() {
     </div>
   );
 }
+
