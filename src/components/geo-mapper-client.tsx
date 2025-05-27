@@ -25,10 +25,15 @@ export default function GeoMapperClient() {
   const [layers, setLayers] = useState<MapLayer[]>([]);
   const mapRef = useRef<OLMap | null>(null);
   const mapAreaRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const [isInspectModeActive, setIsInspectModeActive] = useState(false);
   const [selectedFeatureAttributes, setSelectedFeatureAttributes] = useState<Record<string, any> | null>(null);
-  const [isCollapsed, setIsCollapsed] = useState(false); // State for panel collapse
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const [position, setPosition] = useState({ x: 16, y: 16 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0, panelX: 0, panelY: 0 });
 
   const { toast } = useToast();
 
@@ -41,7 +46,7 @@ export default function GeoMapperClient() {
       prevLayers.map(layer => {
         if (layer.id === layerId) {
           const newVisibility = !layer.visible;
-          layer.olLayer.setVisible(newVisibility); // Directly update OL layer visibility
+          // Actualización directa en OpenLayers se maneja en el useEffect de [layers]
           return { ...layer, visible: newVisibility };
         }
         return layer;
@@ -63,26 +68,17 @@ export default function GeoMapperClient() {
         console.error("Base map layer not found!");
         return;
     }
-
-    // Get current vector layers on the map (all layers except the first one)
+    
+    // Temporarily remove all vector layers (all layers except the base layer)
     const olMapVectorLayers = currentMap.getLayers().getArray().slice(1) as VectorLayerType<VectorSourceType<Feature<any>>>[];
-
-    // Remove vector layers from map that are no longer in the state
     olMapVectorLayers.forEach(olMapLayer => {
-        const appLayerExists = layers.find(appLyr => appLyr.olLayer === olMapLayer);
-        if (!appLayerExists) {
-            currentMap.removeLayer(olMapLayer);
-        }
+      currentMap.removeLayer(olMapLayer);
     });
 
-    // Add/update layers from state
+    // Re-add all layers from the current state, ensuring correct order and visibility
     layers.forEach(appLayer => {
-        // Check if the OpenLayers layer instance is already on the map
-        const olLayerOnMap = olMapVectorLayers.find(olLyr => olLyr === appLayer.olLayer);
-        if (!olLayerOnMap) {
-            currentMap.addLayer(appLayer.olLayer);
-        }
-        appLayer.olLayer.setVisible(appLayer.visible);
+      currentMap.addLayer(appLayer.olLayer); // Add layer instance
+      appLayer.olLayer.setVisible(appLayer.visible); // Set its visibility
     });
 
   }, [layers]);
@@ -153,6 +149,60 @@ export default function GeoMapperClient() {
     setIsCollapsed(!isCollapsed);
   };
 
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!panelRef.current) return;
+    setIsDragging(true);
+    const panelRect = panelRef.current.getBoundingClientRect();
+    // Store initial mouse position and panel's current position
+    // Position state is relative to the parent (mapAreaRef)
+    dragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      panelX: position.x, // Current position.x from state
+      panelY: position.y, // Current position.y from state
+    };
+    e.preventDefault(); // Prevent text selection during drag
+  }, [position.x, position.y]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging || !mapAreaRef.current || !panelRef.current) return;
+
+      const dx = e.clientX - dragStartRef.current.x;
+      const dy = e.clientY - dragStartRef.current.y;
+
+      let newX = dragStartRef.current.panelX + dx;
+      let newY = dragStartRef.current.panelY + dy;
+
+      const mapRect = mapAreaRef.current.getBoundingClientRect();
+      const panelRect = panelRef.current.getBoundingClientRect();
+      
+      // Constrain within mapAreaRef boundaries
+      newX = Math.max(0, Math.min(newX, mapRect.width - panelRect.width));
+      newY = Math.max(0, Math.min(newY, mapRect.height - panelRect.height));
+
+      setPosition({ x: newX, y: newY });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    } else {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging]);
+
+
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
       <header className="bg-primary text-primary-foreground p-4 shadow-md flex items-center">
@@ -163,18 +213,18 @@ export default function GeoMapperClient() {
         <MapView mapRef={mapRef} setMapInstance={setMapInstance} />
         
         <div
+          ref={panelRef}
           className="absolute z-[50] bg-blue-700/70 backdrop-blur-md rounded-lg shadow-xl flex flex-col text-white overflow-hidden"
           style={{
-            top: '16px',
-            left: '16px',
             width: '350px',
+            transform: `translate(${position.x}px, ${position.y}px)`,
             // Max height is handled by the inner content div
           }}
         >
           {/* Title Bar for Collapse/Expand and Drag */}
           <div 
             className="p-2 bg-gray-700/80 flex items-center justify-between cursor-grab rounded-t-lg"
-            // onMouseDown will be added here later for drag
+            onMouseDown={handleMouseDown}
           >
             <h2 className="text-sm font-semibold">Herramientas del Mapa</h2>
             <Button variant="ghost" size="icon" onClick={toggleCollapse} className="h-6 w-6 text-white hover:bg-gray-600/80">
@@ -185,7 +235,7 @@ export default function GeoMapperClient() {
 
           {/* Collapsible Content */}
           {!isCollapsed && (
-            <div className="flex-1 min-h-0 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 120px)' /* Adjust as needed */ }}>
+            <div className="flex-1 min-h-0 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 120px)' /* Adjust as needed, e.g., map header height + panel title bar */ }}>
               <MapControls 
                   onAddLayer={addLayer}
                   layers={layers}
@@ -204,3 +254,4 @@ export default function GeoMapperClient() {
     </div>
   );
 }
+
