@@ -30,7 +30,7 @@ export interface MapLayer {
 
 interface OSMCategoryConfig {
   id: string;
-  name: string; // Changed from namePrefix to name
+  name: string;
   overpassQueryFragment: (bboxStr: string) => string;
   matcher: (tags: any) => boolean;
   style: Style;
@@ -115,9 +115,7 @@ export default function GeoMapperClient() {
 
   const [activeDrawTool, setActiveDrawTool] = useState<string | null>(null);
   const [isFetchingOSM, setIsFetchingOSM] = useState(false);
-  const [selectedOSMCategoryIds, setSelectedOSMCategoryIds] = useState<string[]>(
-    () => osmCategoryConfig.map(cat => cat.id) // All selected by default
-  );
+  const [selectedOSMCategoryIds, setSelectedOSMCategoryIds] = useState<string[]>([]);
 
 
   const addLayer = useCallback((newLayer: MapLayer) => {
@@ -283,6 +281,7 @@ export default function GeoMapperClient() {
       const panelRect = panelRef.current.getBoundingClientRect();
 
       if (panelRect.width === 0 || panelRect.height === 0 || mapRect.width === 0 || mapRect.height === 0) {
+        // console.warn("Map or Panel dimensions are zero, skipping drag update.");
         return;
       }
 
@@ -290,6 +289,7 @@ export default function GeoMapperClient() {
       newY = Math.max(0, Math.min(newY, mapRect.height - panelRect.height));
 
       if (isNaN(newX) || isNaN(newY)) {
+        // console.error("Calculated NaN position, skipping drag update:", {newX, newY});
         return;
       }
       setPosition({ x: newX, y: newY });
@@ -374,7 +374,7 @@ export default function GeoMapperClient() {
         );
         out geom;
       `;
-      console.log("Overpass Query:", overpassQuery); 
+      // console.log("Overpass Query:", overpassQuery); 
 
       const response = await fetch('https://overpass-api.de/api/interpreter', {
         method: 'POST',
@@ -527,7 +527,7 @@ export default function GeoMapperClient() {
           ref={panelRef}
           className="absolute bg-gray-800/60 backdrop-blur-md rounded-lg shadow-xl flex flex-col text-white overflow-hidden z-30"
           style={{
-             width: '350px', // Adjusted width
+             width: '350px',
              top: `${position.y}px`,
              left: `${position.x}px`,
           }}
@@ -544,7 +544,7 @@ export default function GeoMapperClient() {
           </div>
 
           {!isCollapsed && (
-            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}> {/* Max height for scroll */}
+            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}> {}
               <MapControls
                   onAddLayer={addLayer}
                   layers={layers}
