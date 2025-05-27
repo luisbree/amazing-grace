@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import type { Feature } from 'ol';
 import { KML, GeoJSON } from 'ol/format';
 import VectorLayer from 'ol/layer/Vector';
@@ -118,16 +118,16 @@ const MapControls: React.FC<MapControlsProps> = ({
     }
   };
 
-  const resetFileInput = () => {
+  const resetFileInput = useCallback(() => {
     setSelectedFile(null);
     setSelectedMultipleFiles(null);
     const fileInput = document.getElementById(fileInputId) as HTMLInputElement;
     if (fileInput) fileInput.value = '';
-  };
+  }, [fileInputId]);
 
   const handleFileUpload = useCallback(async () => {
     if (!selectedFile && !selectedMultipleFiles) {
-      toast({ title: "Ningún archivo seleccionado", description: "Por favor, elija un archivo o archivos para cargar.", variant: "destructive" });
+      // This case should ideally not be hit if called from useEffect correctly
       return;
     }
     setIsLoading(true);
@@ -239,7 +239,14 @@ const MapControls: React.FC<MapControlsProps> = ({
       setIsLoading(false);
       resetFileInput();
     }
-  }, [selectedFile, selectedMultipleFiles, onAddLayer, fileInputId, toast]);
+  }, [selectedFile, selectedMultipleFiles, onAddLayer, fileInputId, toast, setIsLoading, resetFileInput]);
+
+  useEffect(() => {
+    if (selectedFile || selectedMultipleFiles) {
+      handleFileUpload();
+    }
+  }, [selectedFile, selectedMultipleFiles, handleFileUpload]);
+
 
   const getButtonVariant = (toolName: string) => {
     return activeDrawTool === toolName ? "secondary" : "outline";
@@ -259,7 +266,7 @@ const MapControls: React.FC<MapControlsProps> = ({
         <AccordionItem value="upload-section" className="border-b-0 bg-white/5 rounded-md">
           <AccordionTrigger className="p-3 hover:no-underline hover:bg-white/10 rounded-t-md data-[state=open]:rounded-b-none">
             <SectionHeader 
-              title="Cargar Capa" 
+              title="Importar" 
               description="KML, GeoJSON, Shapefile"
               icon={Upload} 
             />
@@ -275,12 +282,15 @@ const MapControls: React.FC<MapControlsProps> = ({
                   onChange={handleFileChange}
                   accept=".kml,.geojson,.json,.zip,.shp,.dbf"
                   className="mt-1 file:mr-2 file:py-1.5 file:px-2 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30 text-white/90 border-white/30 placeholder-gray-400 text-xs h-8"
+                  disabled={isLoading}
                 />
               </div>
-              <Button onClick={handleFileUpload} disabled={(!selectedFile && !selectedMultipleFiles) || isLoading} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground text-xs h-8">
-                {isLoading ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <FileText className="mr-2 h-3 w-3" />}
-                {isLoading ? 'Cargando...' : 'Añadir al Mapa'}
-              </Button>
+              {isLoading && (
+                <div className="flex items-center justify-center text-xs text-primary mt-2">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Procesando archivo...
+                </div>
+              )}
             </div>
           </AccordionContent>
         </AccordionItem>
@@ -298,18 +308,18 @@ const MapControls: React.FC<MapControlsProps> = ({
               <div className="text-center py-6 px-3">
                 <Layers className="mx-auto h-10 w-10 text-gray-400/40" />
                 <p className="mt-1.5 text-xs text-gray-300/90">No hay capas cargadas.</p>
-                <p className="text-xs text-gray-400/70">Use el cargador de arriba.</p>
+                <p className="text-xs text-gray-400/70">Use el importador de arriba.</p>
               </div>
             ) : (
               <ScrollArea className="max-h-48 p-2"> 
                 <ul className="space-y-1.5">
                   {layers.map((layer) => (
-                    <li key={layer.id} className="flex items-center justify-between p-2 rounded-md border border-white/15 hover:bg-white/10 transition-colors">
-                      <Checkbox
+                    <li key={layer.id} className="flex items-center justify-between p-1.5 rounded-md border border-white/15 hover:bg-white/10 transition-colors">
+                       <Checkbox
                           id={`layer-toggle-${layer.id}`}
                           checked={layer.visible}
                           onCheckedChange={() => onToggleLayerVisibility(layer.id)}
-                          className="data-[state=checked]:bg-accent data-[state=checked]:border-accent-foreground border-muted-foreground/70 mr-2"
+                          className="data-[state=checked]:bg-accent data-[state=checked]:border-accent-foreground border-muted-foreground/70 mr-2 h-3.5 w-3.5"
                           aria-label={`Alternar visibilidad para ${layer.name}`}
                         />
                       <Label htmlFor={`layer-toggle-${layer.id}`} className="flex-1 cursor-default truncate pr-1 text-xs font-medium text-white" title={layer.name}>
@@ -322,6 +332,7 @@ const MapControls: React.FC<MapControlsProps> = ({
                           onClick={() => onZoomToLayerExtent(layer.id)}
                           className="h-6 w-6 text-white hover:bg-gray-600/80 p-0"
                           aria-label={`Zoom a ${layer.name}`}
+                          title="Ir a la extensión de la capa"
                         >
                           <ZoomIn className="h-4 w-4" />
                         </Button>
@@ -331,6 +342,7 @@ const MapControls: React.FC<MapControlsProps> = ({
                           onClick={() => onRemoveLayer(layer.id)}
                           className="h-6 w-6 text-white hover:bg-red-500/30 hover:text-red-400 p-0"
                           aria-label={`Eliminar ${layer.name}`}
+                          title="Eliminar capa"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -530,4 +542,3 @@ const MapControls: React.FC<MapControlsProps> = ({
 };
 
 export default MapControls;
-
