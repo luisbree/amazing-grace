@@ -7,30 +7,31 @@ import TileLayer from 'ol/layer/Tile';
 import OSM from 'ol/source/OSM';
 import {defaults as defaultControls} from 'ol/control';
 import { fromLonLat } from 'ol/proj';
-import type { MapLayer } from '@/components/geo-mapper-client';
+// MapLayer interface is defined in geo-mapper-client and not directly used here for layer addition
 
 interface MapViewProps {
   mapRef: React.MutableRefObject<OLMap | null>;
-  layers: MapLayer[]; 
   setMapInstance: (map: OLMap) => void;
 }
 
-const MapView: React.FC<MapViewProps> = ({ mapRef, layers, setMapInstance }) => {
+const MapView: React.FC<MapViewProps> = ({ mapRef, setMapInstance }) => {
   const mapElementRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!mapElementRef.current || mapRef.current) return;
+    if (!mapElementRef.current || mapRef.current) { // If map already initialized, do nothing
+      return;
+    }
 
     const map = new OLMap({
       target: mapElementRef.current,
       layers: [
         new TileLayer({
-          source: new OSM(),
+          source: new OSM(), // Base OSM layer
         }),
       ],
       view: new View({
-        center: fromLonLat([-60.0, -36.5], 'EPSG:3857'), // Center on Buenos Aires Province
-        zoom: 7, // Adjusted zoom level for a province
+        center: fromLonLat([-60.0, -36.5], 'EPSG:3857'),
+        zoom: 7,
         projection: 'EPSG:3857', 
         constrainResolution: true, 
       }),
@@ -43,25 +44,22 @@ const MapView: React.FC<MapViewProps> = ({ mapRef, layers, setMapInstance }) => 
       }),
     });
 
-    mapRef.current = map;
-    setMapInstance(map);
+    mapRef.current = map; // Set the ref in the parent component
+    setMapInstance(map); // Notify parent about the map instance
 
-    layers.forEach(layer => {
-        if (layer.olLayer && !map.getLayers().getArray().includes(layer.olLayer)) {
-            map.addLayer(layer.olLayer);
-            layer.olLayer.setVisible(layer.visible);
-        }
-    });
-    
     return () => {
       if (mapRef.current) {
-        mapRef.current.setTarget(undefined);
+        mapRef.current.setTarget(undefined); // Clean up map target on unmount
+        // mapRef.current = null; // Avoid setting parent's ref to null here, parent manages its lifecycle
       }
     };
-  }, [setMapInstance, layers, mapRef]); 
+  // mapRef is a ref from parent, setMapInstance is a callback.
+  // These should be stable or correctly memoized by the parent.
+  // Adding them to dependency array ensures effect runs if they were to change,
+  // though for refs and typical callbacks this isn't always necessary if parent guarantees stability.
+  }, [mapRef, setMapInstance]); 
 
   return <div ref={mapElementRef} className="w-full h-full bg-gray-200" />;
 };
 
 export default MapView;
-
