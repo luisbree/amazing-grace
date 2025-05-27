@@ -16,9 +16,13 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Upload, Layers, FileText, Loader2, MousePointerClick, XCircle, ZoomIn, Trash2 } from 'lucide-react';
+import { 
+  Upload, Layers, FileText, Loader2, MousePointerClick, XCircle, ZoomIn, Trash2,
+  Square, PenLine, Dot, Ban, Eraser, Save // Drawing icons
+} from 'lucide-react';
 import type { MapLayer } from '@/components/geo-mapper-client';
 import { useToast } from "@/hooks/use-toast";
+import { Separator } from '@/components/ui/separator';
 
 interface MapControlsProps {
   onAddLayer: (layer: MapLayer) => void;
@@ -30,6 +34,12 @@ interface MapControlsProps {
   selectedFeatureAttributes: Record<string, any> | null;
   onClearSelectedFeature: () => void;
   onZoomToLayerExtent: (layerId: string) => void;
+  // Drawing props
+  activeDrawTool: string | null;
+  onToggleDrawingTool: (toolType: 'Polygon' | 'LineString' | 'Point') => void;
+  onStopDrawingTool: () => void;
+  onClearDrawnFeatures: () => void;
+  onSaveDrawnFeaturesAsKML: () => void;
 }
 
 const MapControls: React.FC<MapControlsProps> = ({ 
@@ -41,7 +51,13 @@ const MapControls: React.FC<MapControlsProps> = ({
   onToggleInspectMode,
   selectedFeatureAttributes,
   onClearSelectedFeature,
-  onZoomToLayerExtent
+  onZoomToLayerExtent,
+  // Drawing props
+  activeDrawTool,
+  onToggleDrawingTool,
+  onStopDrawingTool,
+  onClearDrawnFeatures,
+  onSaveDrawnFeaturesAsKML
 }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedMultipleFiles, setSelectedMultipleFiles] = useState<FileList | null>(null);
@@ -187,8 +203,13 @@ const MapControls: React.FC<MapControlsProps> = ({
     }
   }, [selectedFile, selectedMultipleFiles, onAddLayer, fileInputId, toast]);
 
+  const getButtonVariant = (toolName: string) => {
+    return activeDrawTool === toolName ? "secondary" : "outline";
+  };
+
   return (
     <div className="flex flex-col h-full bg-transparent text-white">
+      {/* File Upload Section */}
       <Card className="bg-transparent shadow-none border-0 border-b border-white/20 rounded-none">
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center text-base font-semibold text-white">
@@ -214,7 +235,8 @@ const MapControls: React.FC<MapControlsProps> = ({
           </Button>
         </CardContent>
       </Card>
-
+      
+      {/* Layer Management Section */}
       <Card className="flex-1 flex flex-col min-h-0 bg-transparent shadow-none border-0 border-b border-white/20 rounded-none">
         <CardHeader className="pb-3 pt-3">
           <CardTitle className="flex items-center text-base font-semibold text-white">
@@ -272,7 +294,8 @@ const MapControls: React.FC<MapControlsProps> = ({
         </CardContent>
       </Card>
 
-      <Card className="flex-1 flex flex-col min-h-0 bg-transparent shadow-none border-0 rounded-none">
+      {/* Feature Inspector Section */}
+      <Card className="flex-1 flex flex-col min-h-0 bg-transparent shadow-none border-0 border-b border-white/20 rounded-none">
         <CardHeader className="pb-3 pt-3">
           <CardTitle className="flex items-center text-base font-semibold text-white">
             <MousePointerClick className="mr-2 h-4 w-4 text-primary" /> Inspector de Entidades
@@ -314,6 +337,66 @@ const MapControls: React.FC<MapControlsProps> = ({
               <p className="text-xs text-center text-gray-300/80 py-2">Haga clic en una entidad en el mapa para ver sus atributos.</p>
             )
           )}
+        </CardContent>
+      </Card>
+
+      {/* Drawing Tools Section */}
+      <Card className="bg-transparent shadow-none border-0 rounded-none">
+        <CardHeader className="pb-3 pt-3">
+          <CardTitle className="flex items-center text-base font-semibold text-white">
+            <PenLine className="mr-2 h-4 w-4 text-primary" /> Herramientas de Dibujo
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-2 pt-0 space-y-2">
+          <div className="grid grid-cols-3 gap-2">
+            <Button 
+              onClick={() => onToggleDrawingTool('Polygon')} 
+              variant={getButtonVariant('Polygon')} 
+              className="text-xs h-8 border-white/30 hover:bg-white/10 text-white/90 data-[state=active]:bg-accent/30 data-[state=active]:text-white"
+              data-state={activeDrawTool === 'Polygon' ? 'active' : 'inactive'}
+            >
+              <Square className="mr-1 h-3 w-3" /> Polígono
+            </Button>
+            <Button 
+              onClick={() => onToggleDrawingTool('LineString')} 
+              variant={getButtonVariant('LineString')}
+              className="text-xs h-8 border-white/30 hover:bg-white/10 text-white/90 data-[state=active]:bg-accent/30 data-[state=active]:text-white"
+              data-state={activeDrawTool === 'LineString' ? 'active' : 'inactive'}
+            >
+              <PenLine className="mr-1 h-3 w-3" /> Línea
+            </Button>
+            <Button 
+              onClick={() => onToggleDrawingTool('Point')} 
+              variant={getButtonVariant('Point')}
+              className="text-xs h-8 border-white/30 hover:bg-white/10 text-white/90 data-[state=active]:bg-accent/30 data-[state=active]:text-white"
+              data-state={activeDrawTool === 'Point' ? 'active' : 'inactive'}
+            >
+              <Dot className="mr-1 h-3 w-3" /> Punto
+            </Button>
+          </div>
+          {activeDrawTool && (
+            <Button 
+              onClick={onStopDrawingTool} 
+              variant="outline" 
+              className="w-full text-xs h-8 border-white/30 hover:bg-white/10 text-white/90"
+            >
+              <Ban className="mr-2 h-3 w-3" /> Detener Dibujo
+            </Button>
+          )}
+          <Separator className="my-2 bg-white/20" />
+          <Button 
+            onClick={onClearDrawnFeatures} 
+            variant="outline" 
+            className="w-full text-xs h-8 border-white/30 hover:bg-red-500/20 hover:text-red-300 text-white/90"
+          >
+            <Eraser className="mr-2 h-3 w-3" /> Limpiar Dibujos
+          </Button>
+          <Button 
+            onClick={onSaveDrawnFeaturesAsKML} 
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground text-xs h-8 mt-2"
+          >
+            <Save className="mr-2 h-3 w-3" /> Guardar Dibujos (KML)
+          </Button>
         </CardContent>
       </Card>
     </div>

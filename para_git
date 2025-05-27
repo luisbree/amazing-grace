@@ -1,0 +1,4 @@
+git status         # Opcional, para ver los cambios
+git add .          # Añade todos los cambios
+git commit -m "Mensaje de tus cambios"
+git push origin main   # Sube los cambios a GitHub

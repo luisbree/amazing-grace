@@ -6,7 +6,13 @@ import type { Map as OLMap, Feature } from 'ol';
 import type VectorLayerType from 'ol/layer/Vector';
 import type VectorSourceType from 'ol/source/Vector';
 import type { Extent } from 'ol/extent';
-import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react'; // Trash2 might be used in MapControls
+import { ChevronDown, ChevronUp } from 'lucide-react';
+import Draw from 'ol/interaction/Draw';
+import {KML} from 'ol/format';
+import VectorLayer from 'ol/layer/Vector';
+import VectorSource from 'ol/source/Vector';
+import { Style, Fill, Stroke, Circle as CircleStyle } from 'ol/style';
+
 
 import MapView from '@/components/map-view';
 import MapControls from '@/components/map-controls';
@@ -38,6 +44,13 @@ export default function GeoMapperClient() {
 
   const { toast } = useToast();
 
+  // Drawing related state and refs
+  const drawingLayerRef = useRef<VectorLayerType<VectorSourceType<Feature<any>>> | null>(null);
+  const drawingSourceRef = useRef<VectorSourceType<Feature<any>> | null>(null);
+  const drawInteractionRef = useRef<Draw | null>(null);
+  const [activeDrawTool, setActiveDrawTool] = useState<string | null>(null);
+
+
   const addLayer = useCallback((newLayer: MapLayer) => {
     setLayers(prevLayers => [...prevLayers, newLayer]);
   }, []);
@@ -51,7 +64,13 @@ export default function GeoMapperClient() {
     setLayers(prevLayers =>
       prevLayers.map(layer => {
         if (layer.id === layerId) {
-          return { ...layer, visible: !layer.visible };
+          const newVisibility = !layer.visible;
+          // Directly update OL layer visibility here as well,
+          // though the useEffect for layers will also handle it.
+          if (layer.olLayer) {
+            layer.olLayer.setVisible(newVisibility);
+          }
+          return { ...layer, visible: newVisibility };
         }
         return layer;
       })
@@ -60,21 +79,60 @@ export default function GeoMapperClient() {
 
   const setMapInstance = useCallback((mapInstance: OLMap) => {
     mapRef.current = mapInstance;
+    // Initialize drawing layer once map is available
+    if (mapRef.current && !drawingLayerRef.current) {
+      drawingSourceRef.current = new VectorSource({ wrapX: false });
+      drawingLayerRef.current = new VectorLayer({
+        source: drawingSourceRef.current,
+        style: new Style({
+          fill: new Fill({
+            color: 'rgba(0, 150, 255, 0.3)', // Light blue fill
+          }),
+          stroke: new Stroke({
+            color: '#007bff', // Blue stroke
+            width: 2,
+          }),
+          image: new CircleStyle({
+            radius: 7,
+            fill: new Fill({
+              color: '#007bff',
+            }),
+            stroke: new Stroke({
+              color: '#ffffff',
+              width: 1.5
+            })
+          }),
+        }),
+        zIndex: 10 // Ensure drawing layer is on top of other vector layers
+      });
+      mapRef.current.addLayer(drawingLayerRef.current);
+    }
   }, []);
 
   useEffect(() => {
     if (!mapRef.current) return;
     const currentMap = mapRef.current;
-
-    const baseLayer = currentMap.getLayers().item(0); 
     
-    const olMapVectorLayers = currentMap.getLayers().getArray().slice(1) as VectorLayerType<VectorSourceType<Feature<any>>>[];
+    // Handle file-uploaded layers
+    const baseLayer = currentMap.getLayers().getArray().find(l => l.get('name') === 'OSMBaseLayer' || l === currentMap.getLayers().item(0));
+    const olMapVectorLayers = currentMap.getLayers().getArray().filter(
+      l => l !== baseLayer && l !== drawingLayerRef.current // Exclude base and drawing layer
+    ) as VectorLayerType<VectorSourceType<Feature<any>>>[];
+
+    // Remove vector layers that are not in the current `layers` state or are not the drawing layer
     olMapVectorLayers.forEach(olMapLayer => {
-      currentMap.removeLayer(olMapLayer);
+      if (!layers.some(appLayer => appLayer.olLayer === olMapLayer)) {
+        currentMap.removeLayer(olMapLayer);
+      }
     });
 
+    // Add/update layers from the `layers` state
     layers.forEach(appLayer => {
-      currentMap.addLayer(appLayer.olLayer);
+      // Check if layer is already on map
+      const existingLayer = currentMap.getLayers().getArray().includes(appLayer.olLayer);
+      if (!existingLayer) {
+        currentMap.addLayer(appLayer.olLayer);
+      }
       appLayer.olLayer.setVisible(appLayer.visible);
     });
 
@@ -83,10 +141,17 @@ export default function GeoMapperClient() {
 
   const handleMapClick = useCallback((event: any) => {
     if (!isInspectModeActive || !mapRef.current) return;
+
+    // If a drawing tool is active, don't inspect features on click
+    if (activeDrawTool) return;
+
     const clickedPixel = mapRef.current.getEventPixel(event.originalEvent);
     let featureFound = false;
-    mapRef.current.forEachFeatureAtPixel(clickedPixel, (feature) => {
+    mapRef.current.forEachFeatureAtPixel(clickedPixel, (feature, layer) => {
       if (featureFound) return; 
+      // Don't inspect features from the drawing layer itself in this inspector
+      if (layer === drawingLayerRef.current) return;
+
       const properties = feature.getProperties();
       const attributesToShow: Record<string, any> = {};
       for (const key in properties) {
@@ -102,15 +167,16 @@ export default function GeoMapperClient() {
     if (!featureFound) {
       setSelectedFeatureAttributes(null);
     }
-  }, [isInspectModeActive, toast]);
+  }, [isInspectModeActive, activeDrawTool, toast]);
 
   useEffect(() => {
     if (mapRef.current) {
-      if (isInspectModeActive) {
+      if (isInspectModeActive && !activeDrawTool) { // Only inspect if no draw tool is active
         mapRef.current.on('singleclick', handleMapClick);
       } else {
         mapRef.current.un('singleclick', handleMapClick);
-        setSelectedFeatureAttributes(null); 
+        // Optionally clear selection when inspect mode is turned off or drawing starts
+        // setSelectedFeatureAttributes(null); 
       }
     }
     return () => {
@@ -118,7 +184,7 @@ export default function GeoMapperClient() {
         mapRef.current.un('singleclick', handleMapClick);
       }
     };
-  }, [isInspectModeActive, handleMapClick]);
+  }, [isInspectModeActive, activeDrawTool, handleMapClick]);
 
   const clearSelectedFeature = useCallback(() => {
     setSelectedFeatureAttributes(null);
@@ -205,6 +271,75 @@ export default function GeoMapperClient() {
   }, [isDragging]); 
 
 
+  // Drawing functions
+  const toggleDrawingTool = useCallback((toolType: 'Polygon' | 'LineString' | 'Point') => {
+    if (!mapRef.current || !drawingSourceRef.current) return;
+    
+    // If inspect mode is active, deactivate it
+    if (isInspectModeActive) setIsInspectModeActive(false);
+
+    if (drawInteractionRef.current) {
+      mapRef.current.removeInteraction(drawInteractionRef.current);
+      drawInteractionRef.current = null;
+    }
+
+    if (activeDrawTool === toolType) {
+      setActiveDrawTool(null); // Deactivate if clicking the same tool
+    } else {
+      const newDrawInteraction = new Draw({
+        source: drawingSourceRef.current,
+        type: toolType,
+      });
+      mapRef.current.addInteraction(newDrawInteraction);
+      drawInteractionRef.current = newDrawInteraction;
+      setActiveDrawTool(toolType);
+    }
+  }, [activeDrawTool, isInspectModeActive]);
+
+  const stopDrawingTool = useCallback(() => {
+    if (mapRef.current && drawInteractionRef.current) {
+      mapRef.current.removeInteraction(drawInteractionRef.current);
+      drawInteractionRef.current = null;
+    }
+    setActiveDrawTool(null);
+  }, []);
+
+  const clearDrawnFeatures = useCallback(() => {
+    if (drawingSourceRef.current) {
+      drawingSourceRef.current.clear();
+      toast({ title: "Dibujos Borrados", description: "Se han eliminado todos los dibujos del mapa." });
+    }
+  }, [toast]);
+
+  const saveDrawnFeaturesAsKML = useCallback(() => {
+    if (!drawingSourceRef.current || drawingSourceRef.current.getFeatures().length === 0) {
+      toast({ title: "Sin Dibujos", description: "No hay nada dibujado para guardar.", variant: "destructive" });
+      return;
+    }
+    const features = drawingSourceRef.current.getFeatures();
+    const kmlFormat = new KML();
+    try {
+      const kmlString = kmlFormat.writeFeatures(features, {
+        dataProjection: 'EPSG:4326',
+        featureProjection: 'EPSG:3857', 
+      });
+
+      const blob = new Blob([kmlString], { type: 'application/vnd.google-earth.kml+xml;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'drawings.kml';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+      toast({ title: "Dibujos Guardados", description: "Los dibujos se han guardado como drawings.kml." });
+    } catch (error) {
+      console.error("Error saving KML:", error);
+      toast({ title: "Error al Guardar", description: "No se pudieron guardar los dibujos como KML.", variant: "destructive" });
+    }
+  }, [toast]);
+
+
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
       <header className="bg-primary text-primary-foreground p-4 shadow-md flex items-center">
@@ -246,6 +381,12 @@ export default function GeoMapperClient() {
                   selectedFeatureAttributes={selectedFeatureAttributes}
                   onClearSelectedFeature={clearSelectedFeature}
                   onZoomToLayerExtent={zoomToLayerExtent}
+                  // Drawing props
+                  activeDrawTool={activeDrawTool}
+                  onToggleDrawingTool={toggleDrawingTool}
+                  onStopDrawingTool={stopDrawingTool}
+                  onClearDrawnFeatures={clearDrawnFeatures}
+                  onSaveDrawnFeaturesAsKML={saveDrawnFeaturesAsKML}
               />
             </div>
           )}
