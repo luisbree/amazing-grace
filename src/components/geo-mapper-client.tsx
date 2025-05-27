@@ -172,30 +172,30 @@ export default function GeoMapperClient() {
     if (!mapRef.current) return;
     const currentMap = mapRef.current;
 
-    // Store the base layer and drawing layer to re-add them in order if needed
     const baseLayer = currentMap.getLayers().getArray().find(l => l.get('name') === 'OSMBaseLayer');
     
-    // Get current vector layers on the map (excluding base and drawing layer)
-    const olMapLayers = currentMap.getLayers().getArray()
+    const olMapVectorLayers = currentMap.getLayers().getArray()
       .filter(l => l.get('name') !== 'OSMBaseLayer' && l !== drawingLayerRef.current) as VectorLayerType<VectorSourceType<OLFeature<any>>>[];
 
-    // Remove layers from map that are no longer in the state
-    olMapLayers.forEach(olMapLayer => {
-      if (!layers.some(appLayer => appLayer.olLayer === olMapLayer)) {
+    olMapVectorLayers.forEach(olMapLayer => {
         currentMap.removeLayer(olMapLayer);
-      }
     });
+    
+    if (baseLayer) {
+       currentMap.getLayers().clear(); // Remove all layers
+       currentMap.addLayer(baseLayer); // Re-add base layer first
+       if(drawingLayerRef.current) {
+          currentMap.addLayer(drawingLayerRef.current); // Add drawing layer on top of base
+       }
+    }
+
 
     // Add/update layers from state
     layers.forEach(appLayer => {
-      const existingOlLayer = currentMap.getLayers().getArray().includes(appLayer.olLayer);
-      if (!existingOlLayer) {
-        currentMap.addLayer(appLayer.olLayer);
-      }
+      currentMap.addLayer(appLayer.olLayer);
       appLayer.olLayer.setVisible(appLayer.visible);
-      // Ensure drawing layer is always on top of other vector layers
       if (drawingLayerRef.current) {
-        drawingLayerRef.current.setZIndex(10); 
+        drawingLayerRef.current.setZIndex(layers.length + 1); 
       }
     });
 
@@ -330,10 +330,18 @@ export default function GeoMapperClient() {
     try {
       const extent3857 = geometry.getExtent();
       const extent4326 = transformExtent(extent3857, 'EPSG:3857', 'EPSG:4326');
+      
       if (!extent4326 || extent4326.some(val => !isFinite(val))) {
-          throw new Error("Invalid coordinates in drawn feature extent.");
+          throw new Error("Failed to transform drawn area to valid geographic coordinates.");
       }
-      const bboxStr = `${extent4326[1]},${extent4326[0]},${extent4326[3]},${extent4326[2]}`;
+      if (extent4326[3] < extent4326[1]) { // North < South (maxY < minY)
+          throw new Error("Drawn area resulted in an invalid bounding box: North coordinate is south of the South coordinate.");
+      }
+      if (extent4326[2] < extent4326[0]) { // East < West (maxX < minX)
+          throw new Error("Drawn area resulted in an invalid bounding box: East coordinate is west of the West coordinate.");
+      }
+
+      const bboxStr = `${extent4326[1]},${extent4326[0]},${extent4326[3]},${extent4326[2]}`; // s,w,n,e
 
       let queryParts: string[] = [];
       osmCategoryConfig.forEach(cat => {
@@ -347,7 +355,7 @@ export default function GeoMapperClient() {
         );
         out geom;
       `;
-      console.log("Overpass Query:", overpassQuery); // For debugging
+      console.log("Overpass Query:", overpassQuery); 
 
       const response = await fetch('https://overpass-api.de/api/interpreter', {
         method: 'POST',
