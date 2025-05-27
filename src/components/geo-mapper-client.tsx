@@ -6,7 +6,7 @@ import type { Map as OLMap, Feature as OLFeature } from 'ol';
 import type VectorLayerType from 'ol/layer/Vector';
 import type VectorSourceType from 'ol/source/Vector';
 import type { Extent } from 'ol/extent';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, ListFilter, Download as DownloadIcon, Square, PenLine, Dot, Ban, Eraser, Save } from 'lucide-react'; // Added DownloadIcon
 import Draw from 'ol/interaction/Draw';
 import { KML, GeoJSON } from 'ol/format';
 import VectorLayer from 'ol/layer/Vector';
@@ -14,9 +14,9 @@ import VectorSource from 'ol/source/Vector';
 import { Style, Fill, Stroke, Circle as CircleStyle } from 'ol/style';
 import { transformExtent } from 'ol/proj';
 import osmtogeojson from 'osmtogeojson';
-import shpwrite from 'shp-write';
-import JSZip from 'jszip';
-
+import shpwrite from 'shp-write'; // For Shapefile download
+// JSZip is already imported in map-controls for upload, ensure it's available or re-import if necessary for download logic here
+// import JSZip from 'jszip'; // If needed for download logic specifically here
 
 import MapView from '@/components/map-view';
 import MapControls from '@/components/map-controls';
@@ -134,7 +134,7 @@ export default function GeoMapperClient() {
   const { toast } = useToast();
 
   const drawingLayerRef = useRef<VectorLayerType<VectorSourceType<OLFeature<any>>> | null>(null);
-  const drawingSourceRef = useRef<VectorSourceType<OLFeature<any>>> | null>(null);
+  const drawingSourceRef = useRef<VectorSourceType<OLFeature<any>> | null>(null);
   const drawInteractionRef = useRef<Draw | null>(null);
 
   const [activeDrawTool, setActiveDrawTool] = useState<string | null>(null);
@@ -175,30 +175,44 @@ export default function GeoMapperClient() {
     mapRef.current = mapInstance;
 
     if (mapRef.current && !drawingLayerRef.current) { 
-      if (!drawingSourceRef || typeof drawingSourceRef !== 'object' || !('current' in drawingSourceRef)) {
-        console.error("CRITICAL: drawingSourceRef is not a valid React ref object. Drawing layer cannot be initialized.");
-        return; 
-      }
-      if (!drawingLayerRef || typeof drawingLayerRef !== 'object' || !('current' in drawingLayerRef)) {
-        console.error("CRITICAL: drawingLayerRef is not a valid React ref object. Drawing layer cannot be initialized.");
-        return; 
-      }
+      // The following checks were logging errors. Removing the custom log and return
+      // to let JS throw a more specific error if drawingSourceRef or drawingLayerRef are truly invalid.
+      // This helps pinpoint why they might be invalid rather than just knowing they failed a check.
+      // if (!drawingSourceRef || typeof drawingSourceRef !== 'object' || !('current' in drawingSourceRef)) {
+      //   console.error("CRITICAL: drawingSourceRef is not a valid React ref object. Drawing layer cannot be initialized.");
+      //   return; 
+      // }
+      // if (!drawingLayerRef || typeof drawingLayerRef !== 'object' || !('current' in drawingLayerRef)) {
+      //   console.error("CRITICAL: drawingLayerRef is not a valid React ref object. Drawing layer cannot be initialized.");
+      //   return; 
+      // }
       
-      drawingSourceRef.current = new VectorSource({ wrapX: false });
-      drawingLayerRef.current = new VectorLayer({
-        source: drawingSourceRef.current,
-        style: new Style({
-          fill: new Fill({ color: 'rgba(0, 150, 255, 0.2)' }),
-          stroke: new Stroke({ color: '#007bff', width: 2 }),
-          image: new CircleStyle({
-            radius: 7,
-            fill: new Fill({ color: '#007bff' }),
-            stroke: new Stroke({ color: '#ffffff', width: 1.5 })
-          }),
-        }),
-        zIndex: 1000 
-      });
-      mapRef.current.addLayer(drawingLayerRef.current);
+      // Attempt to initialize. If drawingSourceRef or drawingLayerRef are not valid ref objects,
+      // this will throw a TypeError (e.g., "Cannot set property 'current' of null/undefined/0").
+      try {
+        if (!drawingSourceRef.current) { // Check .current directly to avoid error on drawingSourceRef if it's not a ref
+             drawingSourceRef.current = new VectorSource({ wrapX: false });
+        }
+        if (!drawingLayerRef.current) { // Check .current
+            drawingLayerRef.current = new VectorLayer({
+                source: drawingSourceRef.current, // This relies on drawingSourceRef.current being set
+                style: new Style({
+                fill: new Fill({ color: 'rgba(0, 150, 255, 0.2)' }),
+                stroke: new Stroke({ color: '#007bff', width: 2 }),
+                image: new CircleStyle({
+                    radius: 7,
+                    fill: new Fill({ color: '#007bff' }),
+                    stroke: new Stroke({ color: '#ffffff', width: 1.5 })
+                }),
+                }),
+                zIndex: 1000 
+            });
+            mapRef.current.addLayer(drawingLayerRef.current);
+        }
+      } catch (e: any) {
+        console.error("Error initializing drawing layer in setMapInstance:", e.message, { drawingSourceRef, drawingLayerRef });
+        toast({ title: "Error Crítico", description: "No se pudo inicializar la capa de dibujo.", variant: "destructive"});
+      }
     }
   }, []);
 
@@ -209,7 +223,6 @@ export default function GeoMapperClient() {
 
     const baseLayer = currentMap.getLayers().getArray().find(l => l.get('name') === 'OSMBaseLayer');
     
-    // Remove all non-base and non-drawing vector layers
     const olMapVectorLayers = currentMap.getLayers().getArray()
       .filter(l => l !== baseLayer && l !== drawingLayerRef.current) as VectorLayerType<VectorSourceType<OLFeature<any>>>[];
     
@@ -217,7 +230,6 @@ export default function GeoMapperClient() {
         currentMap.removeLayer(olMapLayer);
     });
     
-    // Add layers from state
     layers.forEach(appLayer => {
       if (!currentMap.getLayers().getArray().includes(appLayer.olLayer)) {
         currentMap.addLayer(appLayer.olLayer);
@@ -226,14 +238,13 @@ export default function GeoMapperClient() {
     });
 
     if (drawingLayerRef.current) {
-      // Ensure drawing layer is on top
       if (!currentMap.getLayers().getArray().includes(drawingLayerRef.current)) {
          currentMap.addLayer(drawingLayerRef.current);
       }
-      drawingLayerRef.current.setZIndex(layers.length + 100); // Ensure it's above other data layers
+      drawingLayerRef.current.setZIndex(layers.length + 100); 
     }
 
-  }, [layers, mapRef]);
+  }, [layers]); // mapRef removed from deps as it's stable; drawingLayerRef is also stable
 
 
   const handleMapClick = useCallback((event: any) => {
@@ -321,6 +332,7 @@ export default function GeoMapperClient() {
       const panelRect = panelRef.current.getBoundingClientRect();
 
       if (panelRect.width === 0 || panelRect.height === 0 || mapRect.width === 0 || mapRect.height === 0) {
+        console.warn("Skipping drag: panel or map rect has zero dimension.", {panelRect, mapRect});
         return;
       }
 
@@ -328,6 +340,7 @@ export default function GeoMapperClient() {
       newY = Math.max(0, Math.min(newY, mapRect.height - panelRect.height));
 
       if (isNaN(newX) || isNaN(newY)) {
+        console.error("Skipping drag: newX or newY is NaN.", {newX, newY, dx, dy, dragStartRefCurrent: dragStartRef.current, clientX: e.clientX, clientY: e.clientY });
         return;
       }
       setPosition({ x: newX, y: newY });
@@ -357,30 +370,26 @@ export default function GeoMapperClient() {
       }
       return;
     }
-
-    const geometry = featureToClear.getGeometry();
-    if (!geometry || geometry.getType() !== 'Polygon') {
-      toast({ title: "Geometría Inválida", description: "Por favor, dibuje un polígono para obtener datos OSM.", variant: "destructive" });
-      if (drawingSourceRef.current && featureToClear && drawingSourceRef.current.getFeatures().includes(featureToClear)) {
-         drawingSourceRef.current.removeFeature(featureToClear);
-      }
-      return;
-    }
     
-    setIsFetchingOSM(true);
+    setIsFetchingOSM(true); // Set fetching true only if initial checks pass
     toast({ title: "Obteniendo Datos OSM", description: "Descargando datos de OpenStreetMap..." });
 
     try {
+      const geometry = featureToClear.getGeometry();
+      if (!geometry || geometry.getType() !== 'Polygon') {
+        throw new Error("Geometría Inválida: Por favor, dibuje un polígono para obtener datos OSM.");
+      }
+      
       const extent3857 = geometry.getExtent();
+      console.log("Extent3857 (Source):", extent3857);
       if (!extent3857 || extent3857.some(val => !isFinite(val)) || (extent3857[2] - extent3857[0] <= 0 && extent3857[2] !== extent3857[0]) || (extent3857[3] - extent3857[1] <= 0 && extent3857[3] !== extent3857[1])) {
-          console.error("Invalid extent in EPSG:3857:", extent3857);
-          throw new Error("Área dibujada tiene una extensión inválida antes de la transformación (inválida o puntos/líneas).");
+          throw new Error("Área dibujada tiene una extensión inválida (inválida o puntos/líneas).");
       }
 
       const extent4326_transformed = transformExtent(extent3857, 'EPSG:3857', 'EPSG:4326');
+      console.log("Extent4326 (Transformed, raw):", extent4326_transformed);
       
       if (!extent4326_transformed || extent4326_transformed.some(val => !isFinite(val))) {
-          console.error("Fallo al transformar extent. Extent3857:", extent3857, "Extent4326_transformed:", extent4326_transformed);
           throw new Error("Fallo al transformar área dibujada a coordenadas geográficas válidas.");
       }
       
@@ -388,19 +397,17 @@ export default function GeoMapperClient() {
       const w_coord = parseFloat(extent4326_transformed[0].toFixed(6));
       const n_coord = parseFloat(extent4326_transformed[3].toFixed(6));
       const e_coord = parseFloat(extent4326_transformed[2].toFixed(6));
+      console.log(`Coordinates for Overpass (s,w,n,e - after toFixed(6)): ${s_coord}, ${w_coord}, ${n_coord}, ${e_coord}`);
 
       if (n_coord < s_coord) { 
-          const message = `Error de Bounding Box (N < S): Norte ${n_coord} es menor que Sur ${s_coord}. Extent4326_raw: ${extent4326_transformed.join(',')}`;
-          console.error(message, {n_coord, s_coord, extent4326_transformed});
-          throw new Error(message);
+          throw new Error(`Error de Bounding Box (N < S): Norte ${n_coord} es menor que Sur ${s_coord}.`);
       }
-      if (e_coord < w_coord && Math.abs(e_coord - w_coord) < 180) { 
-          const message = `Error de Bounding Box (E < W): Este ${e_coord} es menor que Oeste ${w_coord}. Extent4326_raw: ${extent4326_transformed.join(',')}`;
-          console.error(message, {e_coord, w_coord, extent4326_transformed});
-          throw new Error(message);
+      if (e_coord < w_coord && Math.abs(e_coord - w_coord) < 180) { // Check for non-dateline crossing E < W
+          throw new Error(`Error de Bounding Box (E < W): Este ${e_coord} es menor que Oeste ${w_coord}.`);
       }
             
       const bboxStr = `${s_coord},${w_coord},${n_coord},${e_coord}`;
+      console.log("Constructed bboxStr for Overpass API:", bboxStr);
       
       let queryParts: string[] = [];
       const categoriesToFetch = osmCategoryConfig.filter(cat => selectedOSMCategoryIdsRef.current.includes(cat.id));
@@ -416,6 +423,7 @@ export default function GeoMapperClient() {
         );
         out geom;
       `;
+      console.log("Overpass Query:", overpassQuery);
       
       const response = await fetch('https://overpass-api.de/api/interpreter', {
         method: 'POST',
@@ -566,9 +574,9 @@ export default function GeoMapperClient() {
         const geojsonString = new GeoJSON().writeFeatures(allFeatures, {
           dataProjection: 'EPSG:4326',
           featureProjection: 'EPSG:3857',
-          featureProperties: (feature: OLFeature<any>) => { // Keep all properties
+          featureProperties: (feature: OLFeature<any>) => { 
             const props = { ...feature.getProperties() };
-            delete props[feature.getGeometryName() as string]; // Remove geometry from properties
+            delete props[feature.getGeometryName() as string]; 
             return props;
           }
         });
@@ -606,13 +614,11 @@ export default function GeoMapperClient() {
               featureProperties: (feature: OLFeature<any>) => {
                 const props = { ...feature.getProperties() };
                 delete props[feature.getGeometryName() as string];
-                // Sanitize property names for DBF (max 10 chars, no special chars)
                 const sanitizedProps: Record<string, any> = {};
                 for (const key in props) {
                     let sanitizedKey = key.replace(/[^a-zA-Z0-9_]/g, '').substring(0, 10);
-                    if(sanitizedKey.length === 0) sanitizedKey = `prop${Object.keys(sanitizedProps).length}`; // fallback if key becomes empty
+                    if(sanitizedKey.length === 0) sanitizedKey = `prop${Object.keys(sanitizedProps).length}`; 
                     
-                    // Ensure unique keys after sanitization
                     let counter = 0;
                     let finalKey = sanitizedKey;
                     while(finalKey in sanitizedProps) {
@@ -624,18 +630,15 @@ export default function GeoMapperClient() {
                 return sanitizedProps;
               }
             });
-            // Sanitize layer name for filename
             const fileName = layer.name.replace(/[^a-zA-Z0-9_]/g, '_').replace(/\s+/g, '_');
             geoJsonDataPerLayer[fileName] = featureCollection;
           }
         });
 
         if (!featuresFound) throw new Error("No hay entidades en las capas OSM para exportar como Shapefile.");
-
-        // shpwrite.zip returns a promise with base64 data
+        
         const zipContentBase64 = await shpwrite.zip(geoJsonDataPerLayer);
         
-        // Convert base64 to ArrayBuffer
         const byteString = atob(zipContentBase64);
         const arrayBuffer = new ArrayBuffer(byteString.length);
         const uint8Array = new Uint8Array(arrayBuffer);
@@ -685,7 +688,7 @@ export default function GeoMapperClient() {
           </div>
 
           {!isCollapsed && (
-            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}> {/* Adjusted maxHeight */}
               <MapControls
                   onAddLayer={addLayer}
                   layers={layers}
