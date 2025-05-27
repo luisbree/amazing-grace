@@ -18,7 +18,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { 
   Upload, Layers, FileText, Loader2, MousePointerClick, XCircle, ZoomIn, Trash2,
-  Square, PenLine, Dot, Ban, Eraser, Save // Drawing icons
+  Square, PenLine, Dot, Ban, Eraser, Save, DownloadCloud // Drawing icons & OSM
 } from 'lucide-react';
 import type { MapLayer } from '@/components/geo-mapper-client';
 import { useToast } from "@/hooks/use-toast";
@@ -34,12 +34,12 @@ interface MapControlsProps {
   selectedFeatureAttributes: Record<string, any> | null;
   onClearSelectedFeature: () => void;
   onZoomToLayerExtent: (layerId: string) => void;
-  // Drawing props
   activeDrawTool: string | null;
   onToggleDrawingTool: (toolType: 'Polygon' | 'LineString' | 'Point') => void;
   onStopDrawingTool: () => void;
   onClearDrawnFeatures: () => void;
   onSaveDrawnFeaturesAsKML: () => void;
+  isFetchingOSM: boolean;
 }
 
 const MapControls: React.FC<MapControlsProps> = ({ 
@@ -52,12 +52,12 @@ const MapControls: React.FC<MapControlsProps> = ({
   selectedFeatureAttributes,
   onClearSelectedFeature,
   onZoomToLayerExtent,
-  // Drawing props
   activeDrawTool,
   onToggleDrawingTool,
   onStopDrawingTool,
   onClearDrawnFeatures,
-  onSaveDrawnFeaturesAsKML
+  onSaveDrawnFeaturesAsKML,
+  isFetchingOSM,
 }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedMultipleFiles, setSelectedMultipleFiles] = useState<FileList | null>(null);
@@ -89,7 +89,7 @@ const MapControls: React.FC<MapControlsProps> = ({
 
   const handleFileUpload = useCallback(async () => {
     if (!selectedFile && !selectedMultipleFiles) {
-      toast({ title: "Ningún archivo seleccionado", description: "Por favor, elija un archivo o archivos para cargar.", variant: "destructive" });
+      toast({ title: "No file selected", description: "Please choose a file or files to upload.", variant: "destructive" });
       return;
     }
     setIsLoading(true);
@@ -123,12 +123,12 @@ const MapControls: React.FC<MapControlsProps> = ({
             const vectorLayer = new VectorLayer({ source: vectorSource });
             const newLayerId = `${fileInputId}-${shapeFileName}-${Date.now()}`;
             onAddLayer({ id: newLayerId, name: shapeFileName, olLayer: vectorLayer, visible: true });
-            toast({ title: "Capa Añadida", description: `Se añadió correctamente ${shapeFileName} al mapa.` });
+            toast({ title: "Layer Added", description: `${shapeFileName} successfully added to the map.` });
           } else {
-            throw new Error(`No se encontraron entidades en el Shapefile ${shapeFileName} o los archivos están vacíos.`);
+            throw new Error(`No features found in Shapefile ${shapeFileName} or files are empty.`);
           }
         } else {
-          throw new Error("Un Shapefile requiere al menos archivos .shp y .dbf. Por favor, seleccione ambos.");
+          throw new Error("A Shapefile requires at least .shp and .dbf files. Please select both.");
         }
       } else if (selectedFile) {
         const fileName = selectedFile.name;
@@ -163,12 +163,12 @@ const MapControls: React.FC<MapControlsProps> = ({
               const vectorLayer = new VectorLayer({ source: vectorSource });
               const newLayerId = `${fileInputId}-${shpFileNameInZip}-${Date.now()}`;
               onAddLayer({ id: newLayerId, name: shpFileNameInZip, olLayer: vectorLayer, visible: true });
-              toast({ title: "Capa Añadida", description: `Se añadió correctamente ${shpFileNameInZip} (Shapefile desde ZIP) al mapa.` });
+              toast({ title: "Layer Added", description: `${shpFileNameInZip} (Shapefile from ZIP) successfully added.` });
             } else {
-              throw new Error(`No se encontraron entidades en el Shapefile dentro de ${fileName}.`);
+              throw new Error(`No features found in the Shapefile within ${fileName}.`);
             }
           } else {
-            throw new Error(`El archivo ZIP ${fileName} no contiene los archivos .shp y .dbf requeridos.`);
+            throw new Error(`ZIP file ${fileName} does not contain required .shp and .dbf files.`);
           }
         } else {
           const fileContent = await selectedFile.text();
@@ -180,7 +180,7 @@ const MapControls: React.FC<MapControlsProps> = ({
           } else if (fileExtension === 'geojson' || fileExtension === 'json') {
             features = new GeoJSON().readFeatures(fileContent, commonFormatOptions);
           } else {
-            throw new Error(`Tipo de archivo no soportado: .${fileExtension}. Por favor, cargue KML, GeoJSON, o un ZIP conteniendo un Shapefile.`);
+            throw new Error(`Unsupported file type: .${fileExtension}. Please upload KML, GeoJSON, or a ZIP containing a Shapefile.`);
           }
 
           if (features && features.length > 0) {
@@ -188,15 +188,15 @@ const MapControls: React.FC<MapControlsProps> = ({
             const vectorLayer = new VectorLayer({ source: vectorSource });
             const newLayerId = `${fileInputId}-${fileBaseName}-${Date.now()}`;
             onAddLayer({ id: newLayerId, name: fileBaseName, olLayer: vectorLayer, visible: true });
-            toast({ title: "Capa Añadida", description: `Se añadió correctamente ${fileBaseName} al mapa.` });
+            toast({ title: "Layer Added", description: `${fileBaseName} successfully added to the map.` });
           } else {
-            throw new Error(`No se encontraron entidades en ${fileName} o el archivo está vacío.`);
+            throw new Error(`No features found in ${fileName} or file is empty.`);
           }
         }
       }
     } catch (parseError: any) {
-      console.error("Error procesando archivo:", parseError);
-      toast({ title: "Error de Procesamiento", description: parseError.message || "Ocurrió un error desconocido.", variant: "destructive" });
+      console.error("Error processing file:", parseError);
+      toast({ title: "Processing Error", description: parseError.message || "An unknown error occurred.", variant: "destructive" });
     } finally {
       setIsLoading(false);
       resetFileInput();
@@ -213,13 +213,13 @@ const MapControls: React.FC<MapControlsProps> = ({
       <Card className="bg-transparent shadow-none border-0 border-b border-white/20 rounded-none">
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center text-base font-semibold text-white">
-            <Upload className="mr-2 h-4 w-4 text-primary" /> Cargar Capa
+            <Upload className="mr-2 h-4 w-4 text-primary" /> Upload Layer
           </CardTitle>
-          <CardDescription className="text-xs text-gray-300/80">KML, GeoJSON, Shapefile (.shp + .dbf o en .zip)</CardDescription>
+          <CardDescription className="text-xs text-gray-300/80">KML, GeoJSON, Shapefile (.shp + .dbf or in .zip)</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 pb-3">
           <div>
-            <Label htmlFor={fileInputId} className="text-xs font-medium text-white/90">Elegir archivo(s)</Label>
+            <Label htmlFor={fileInputId} className="text-xs font-medium text-white/90">Choose file(s)</Label>
             <Input
               id={fileInputId}
               type="file"
@@ -231,7 +231,7 @@ const MapControls: React.FC<MapControlsProps> = ({
           </div>
           <Button onClick={handleFileUpload} disabled={(!selectedFile && !selectedMultipleFiles) || isLoading} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground text-xs h-8">
             {isLoading ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <FileText className="mr-2 h-3 w-3" />}
-            {isLoading ? 'Cargando...' : 'Añadir al Mapa'}
+            {isLoading ? 'Loading...' : 'Add to Map'}
           </Button>
         </CardContent>
       </Card>
@@ -240,17 +240,17 @@ const MapControls: React.FC<MapControlsProps> = ({
       <Card className="flex-1 flex flex-col min-h-0 bg-transparent shadow-none border-0 border-b border-white/20 rounded-none">
         <CardHeader className="pb-3 pt-3">
           <CardTitle className="flex items-center text-base font-semibold text-white">
-            <Layers className="mr-2 h-4 w-4 text-primary" /> Administrar Capas
+            <Layers className="mr-2 h-4 w-4 text-primary" /> Manage Layers
           </CardTitle>
-          {layers.length > 0 && <CardDescription className="text-xs text-gray-300/80">Alternar visibilidad y acciones.</CardDescription>}
+          {layers.length > 0 && <CardDescription className="text-xs text-gray-300/80">Toggle visibility and actions.</CardDescription>}
         </CardHeader>
         <CardContent className="flex-1 overflow-hidden p-0">
           <ScrollArea className="h-full p-2 pt-0">
             {layers.length === 0 ? (
               <div className="text-center py-6">
                 <Layers className="mx-auto h-10 w-10 text-gray-400/40" />
-                <p className="mt-1.5 text-xs text-gray-300/90">No hay capas cargadas.</p>
-                <p className="text-xs text-gray-400/70">Utilice el cargador de arriba.</p>
+                <p className="mt-1.5 text-xs text-gray-300/90">No layers loaded.</p>
+                <p className="text-xs text-gray-400/70">Use the uploader above.</p>
               </div>
             ) : (
               <ul className="space-y-1.5">
@@ -265,14 +265,14 @@ const MapControls: React.FC<MapControlsProps> = ({
                         checked={layer.visible}
                         onCheckedChange={() => onToggleLayerVisibility(layer.id)}
                         className="data-[state=checked]:bg-accent data-[state=checked]:border-accent-foreground border-muted-foreground/70"
-                        aria-label={`Alternar visibilidad para ${layer.name}`}
+                        aria-label={`Toggle visibility for ${layer.name}`}
                       />
                       <Button
                         variant="ghost"
                         size="icon"
                         onClick={() => onZoomToLayerExtent(layer.id)}
                         className="h-6 w-6 text-white hover:bg-gray-600/80 p-0"
-                        aria-label={`Zoom a ${layer.name}`}
+                        aria-label={`Zoom to ${layer.name}`}
                       >
                         <ZoomIn className="h-4 w-4" />
                       </Button>
@@ -281,7 +281,7 @@ const MapControls: React.FC<MapControlsProps> = ({
                         size="icon"
                         onClick={() => onRemoveLayer(layer.id)}
                         className="h-6 w-6 text-white hover:bg-red-500/30 hover:text-red-400 p-0"
-                        aria-label={`Eliminar ${layer.name}`}
+                        aria-label={`Remove ${layer.name}`}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -298,7 +298,7 @@ const MapControls: React.FC<MapControlsProps> = ({
       <Card className="flex-1 flex flex-col min-h-0 bg-transparent shadow-none border-0 border-b border-white/20 rounded-none">
         <CardHeader className="pb-3 pt-3">
           <CardTitle className="flex items-center text-base font-semibold text-white">
-            <MousePointerClick className="mr-2 h-4 w-4 text-primary" /> Inspector de Entidades
+            <MousePointerClick className="mr-2 h-4 w-4 text-primary" /> Feature Inspector
           </CardTitle>
         </CardHeader>
         <CardContent className="flex-1 overflow-hidden p-2 pt-0 space-y-2">
@@ -306,18 +306,19 @@ const MapControls: React.FC<MapControlsProps> = ({
             onClick={onToggleInspectMode} 
             variant={isInspectModeActive ? "secondary" : "outline"} 
             className={`w-full text-xs h-8 ${isInspectModeActive ? 'bg-accent/30 hover:bg-accent/40 text-white' : 'border-white/30 hover:bg-white/10 text-white/90'}`}
+            disabled={!!activeDrawTool} // Disable if a draw tool is active
           >
-            {isInspectModeActive ? 'Modo Inspector Activo' : 'Activar Modo Inspector'}
+            {isInspectModeActive ? 'Inspector Mode Active' : 'Activate Inspector Mode'}
           </Button>
 
           {selectedFeatureAttributes ? (
             <>
               <Button onClick={onClearSelectedFeature} variant="outline" className="w-full text-xs h-8 border-white/30 hover:bg-white/10 text-white/90">
-                <XCircle className="mr-2 h-3 w-3" /> Limpiar Selección
+                <XCircle className="mr-2 h-3 w-3" /> Clear Selection
               </Button>
               <Card className="bg-black/20 border-white/10 max-h-32">
                 <CardHeader className="p-1.5">
-                  <CardTitle className="text-xs font-medium text-white/90">Atributos de Entidad</CardTitle>
+                  <CardTitle className="text-xs font-medium text-white/90">Feature Attributes</CardTitle>
                 </CardHeader>
                 <CardContent className="p-1.5 pt-0">
                   <ScrollArea className="h-24">
@@ -334,7 +335,7 @@ const MapControls: React.FC<MapControlsProps> = ({
             </>
           ) : (
             isInspectModeActive && (
-              <p className="text-xs text-center text-gray-300/80 py-2">Haga clic en una entidad en el mapa para ver sus atributos.</p>
+              <p className="text-xs text-center text-gray-300/80 py-2">Click a feature on the map to see its attributes.</p>
             )
           )}
         </CardContent>
@@ -344,7 +345,7 @@ const MapControls: React.FC<MapControlsProps> = ({
       <Card className="bg-transparent shadow-none border-0 rounded-none">
         <CardHeader className="pb-3 pt-3">
           <CardTitle className="flex items-center text-base font-semibold text-white">
-            <PenLine className="mr-2 h-4 w-4 text-primary" /> Herramientas de Dibujo
+            <PenLine className="mr-2 h-4 w-4 text-primary" /> Drawing Tools
           </CardTitle>
         </CardHeader>
         <CardContent className="p-2 pt-0 space-y-2">
@@ -355,7 +356,7 @@ const MapControls: React.FC<MapControlsProps> = ({
               className="text-xs h-8 border-white/30 hover:bg-white/10 text-white/90 data-[state=active]:bg-accent/30 data-[state=active]:text-white"
               data-state={activeDrawTool === 'Polygon' ? 'active' : 'inactive'}
             >
-              <Square className="mr-1 h-3 w-3" /> Polígono
+              <Square className="mr-1 h-3 w-3" /> Polygon
             </Button>
             <Button 
               onClick={() => onToggleDrawingTool('LineString')} 
@@ -363,7 +364,7 @@ const MapControls: React.FC<MapControlsProps> = ({
               className="text-xs h-8 border-white/30 hover:bg-white/10 text-white/90 data-[state=active]:bg-accent/30 data-[state=active]:text-white"
               data-state={activeDrawTool === 'LineString' ? 'active' : 'inactive'}
             >
-              <PenLine className="mr-1 h-3 w-3" /> Línea
+              <PenLine className="mr-1 h-3 w-3" /> Line
             </Button>
             <Button 
               onClick={() => onToggleDrawingTool('Point')} 
@@ -371,7 +372,7 @@ const MapControls: React.FC<MapControlsProps> = ({
               className="text-xs h-8 border-white/30 hover:bg-white/10 text-white/90 data-[state=active]:bg-accent/30 data-[state=active]:text-white"
               data-state={activeDrawTool === 'Point' ? 'active' : 'inactive'}
             >
-              <Dot className="mr-1 h-3 w-3" /> Punto
+              <Dot className="mr-1 h-3 w-3" /> Point
             </Button>
           </div>
           {activeDrawTool && (
@@ -380,7 +381,7 @@ const MapControls: React.FC<MapControlsProps> = ({
               variant="outline" 
               className="w-full text-xs h-8 border-white/30 hover:bg-white/10 text-white/90"
             >
-              <Ban className="mr-2 h-3 w-3" /> Detener Dibujo
+              <Ban className="mr-2 h-3 w-3" /> Stop Drawing
             </Button>
           )}
           <Separator className="my-2 bg-white/20" />
@@ -388,15 +389,23 @@ const MapControls: React.FC<MapControlsProps> = ({
             onClick={onClearDrawnFeatures} 
             variant="outline" 
             className="w-full text-xs h-8 border-white/30 hover:bg-red-500/20 hover:text-red-300 text-white/90"
+            disabled={isFetchingOSM}
           >
-            <Eraser className="mr-2 h-3 w-3" /> Limpiar Dibujos
+            <Eraser className="mr-2 h-3 w-3" /> Clear Drawings
           </Button>
           <Button 
             onClick={onSaveDrawnFeaturesAsKML} 
             className="w-full bg-primary hover:bg-primary/90 text-primary-foreground text-xs h-8 mt-2"
+            disabled={isFetchingOSM}
           >
-            <Save className="mr-2 h-3 w-3" /> Guardar Dibujos (KML)
+            <Save className="mr-2 h-3 w-3" /> Save Drawings (KML)
           </Button>
+          {isFetchingOSM && (
+            <div className="flex items-center justify-center text-xs text-primary mt-2">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Fetching OSM Data...
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

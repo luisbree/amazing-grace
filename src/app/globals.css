@@ -64,51 +64,47 @@ body {
   }
 
   .dark {
-    /* Dark Theme - Keeping it simple for now, focusing on light theme as per proposal */
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
+    /* Dark Theme - Focusing on the panel controls to be dark */
+    --background: 240 10% 3.9%; /* Main page background can remain light if preferred */
+    --foreground: 0 0% 98%;     /* Main page foreground */
 
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
+    /* Panel specific dark theme */
+    --panel-background: 220 13% 18%; /* Dark gray for panel */
+    --panel-foreground: 0 0% 95%;    /* Light gray / off-white for panel text */
+
+    --card: 220 13% 18%; /* Cards within panel match panel background */
+    --card-foreground: 0 0% 95%;
 
     --popover: 240 10% 3.9%;
     --popover-foreground: 0 0% 98%;
 
-    /* Primary: Muted Blue, adjusted for dark mode */
-    --primary: 210 40% 60%;
-    --primary-foreground: 0 0% 100%; /* White text on blue */
+    /* Primary for panel: Brighter blue for dark mode */
+    --primary: 210 70% 65%;
+    --primary-foreground: 0 0% 100%; 
 
-    --secondary: 240 4% 12%; /* Darker secondary */
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 240 4% 20%; /* Slightly lighter dark for secondary elements in panel */
+    --secondary-foreground: 0 0% 95%;
 
-    --muted: 240 4% 12%;
-    --muted-foreground: 0 0% 63.9%;
+    --muted: 240 4% 25%; /* Muted for panel */
+    --muted-foreground: 0 0% 65%;
 
-    /* Accent: Soft Green, adjusted for dark mode */
-    --accent: 120 25% 65.1%;
-    --accent-foreground: 0 0% 100%; /* White text on green */
+    /* Accent for panel: Brighter green */
+    --accent: 120 50% 60%;
+    --accent-foreground: 0 0% 100%; 
 
-    --destructive: 0 62.8% 30.6%;
+    --destructive: 0 60% 55%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 240 4% 15%;
-    --input: 240 4% 15%;
-    --ring: 210 40% 70%; /* Lighter ring for dark mode */
+    --border: 240 4% 30%; /* Border for panel elements */
+    --input: 240 4% 25%;  /* Input background for panel */
+    --ring: 210 70% 55%;  /* Ring for panel */
 
+    /* Chart colors are fine as they are */
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
-
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 0 0% 98%;
-    --sidebar-primary: 210 40% 60%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 120 25% 65.1%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 210 40% 70%;
   }
 }
 
