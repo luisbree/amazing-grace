@@ -116,6 +116,11 @@ export default function GeoMapperClient() {
   const [activeDrawTool, setActiveDrawTool] = useState<string | null>(null);
   const [isFetchingOSM, setIsFetchingOSM] = useState(false);
   const [selectedOSMCategoryIds, setSelectedOSMCategoryIds] = useState<string[]>([]);
+  
+  const selectedOSMCategoryIdsRef = useRef(selectedOSMCategoryIds);
+  useEffect(() => {
+    selectedOSMCategoryIdsRef.current = selectedOSMCategoryIds;
+  }, [selectedOSMCategoryIds]);
 
 
   const addLayer = useCallback((newLayer: MapLayer) => {
@@ -311,8 +316,10 @@ export default function GeoMapperClient() {
 
   const fetchOSMData = useCallback(async (drawnFeature: OLFeature<any>) => {
     if (!mapRef.current) return;
+    const currentSelectedIds = selectedOSMCategoryIdsRef.current;
 
-    if (selectedOSMCategoryIds.length === 0) {
+
+    if (currentSelectedIds.length === 0) {
       toast({ title: "Sin Categorías Seleccionadas", description: "Por favor, seleccione al menos una categoría OSM para descargar.", variant: "destructive" });
       if (drawingSourceRef.current && drawnFeature) {
          const drawnFeatures = drawingSourceRef.current.getFeatures();
@@ -343,6 +350,7 @@ export default function GeoMapperClient() {
       const extent4326 = transformExtent(extent3857, 'EPSG:3857', 'EPSG:4326');
       
       if (!extent4326 || extent4326.some(val => !isFinite(val))) {
+          console.error("Fallo al transformar extent. Extent3857:", extent3857, "Extent4326:", extent4326);
           throw new Error("Fallo al transformar área dibujada a coordenadas geográficas válidas.");
       }
 
@@ -351,17 +359,25 @@ export default function GeoMapperClient() {
       const n_coord = parseFloat(extent4326[3].toFixed(6));
       const e_coord = parseFloat(extent4326[2].toFixed(6));
 
+      console.log("Extent4326 after checks:", extent4326);
+      console.log("North:", n_coord, "South:", s_coord, "East:", e_coord, "West:", w_coord);
+
+
       if (n_coord < s_coord) { 
+          console.error("Bounding box validation failed: North coordinate is south of South coordinate.", {n_coord, s_coord});
           throw new Error("Área dibujada resultó en un bounding box inválido: Coordenada Norte es sur de la coordenada Sur.");
       }
       if (e_coord < w_coord) { 
+          console.error("Bounding box validation failed: East coordinate is west of West coordinate.", {e_coord, w_coord});
           throw new Error("Área dibujada resultó en un bounding box inválido: Coordenada Este es oeste de la coordenada Oeste.");
       }
             
       const bboxStr = `${s_coord},${w_coord},${n_coord},${e_coord}`;
+      console.log("Constructed bboxStr for Overpass API:", bboxStr);
       
       let queryParts: string[] = [];
-      const categoriesToFetch = osmCategoryConfig.filter(cat => selectedOSMCategoryIds.includes(cat.id));
+      const categoriesToFetch = osmCategoryConfig.filter(cat => currentSelectedIds.includes(cat.id));
+
 
       categoriesToFetch.forEach(cat => {
         queryParts.push(cat.overpassQueryFragment(bboxStr));
@@ -374,7 +390,7 @@ export default function GeoMapperClient() {
         );
         out geom;
       `;
-      // console.log("Overpass Query:", overpassQuery); 
+      console.log("Overpass Query:", overpassQuery); 
 
       const response = await fetch('https://overpass-api.de/api/interpreter', {
         method: 'POST',
@@ -435,7 +451,7 @@ export default function GeoMapperClient() {
         }
       }
     }
-  }, [toast, addLayer, selectedOSMCategoryIds]);
+  }, [toast, addLayer]);
 
 
   const toggleDrawingTool = useCallback((toolType: 'Polygon' | 'LineString' | 'Point') => {
@@ -544,7 +560,7 @@ export default function GeoMapperClient() {
           </div>
 
           {!isCollapsed && (
-            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}> {}
+            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}>
               <MapControls
                   onAddLayer={addLayer}
                   layers={layers}
@@ -573,3 +589,4 @@ export default function GeoMapperClient() {
     </div>
   );
 }
+
