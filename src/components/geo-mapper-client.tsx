@@ -6,7 +6,7 @@ import type { Map as OLMap, Feature as OLFeature } from 'ol';
 import type VectorLayerType from 'ol/layer/Vector';
 import type VectorSourceType from 'ol/source/Vector';
 import type { Extent } from 'ol/extent';
-import { ChevronDown, ChevronUp, DownloadCloud, Trash2, ZoomIn } from 'lucide-react'; // Added Trash2, ZoomIn
+import { ChevronDown, ChevronUp, DownloadCloud, Trash2, ZoomIn, Eye, EyeOff, Square, PenLine, Dot, Ban, Eraser, Save, Loader2 } from 'lucide-react';
 import Draw from 'ol/interaction/Draw';
 import {KML, GeoJSON} from 'ol/format';
 import VectorLayer from 'ol/layer/Vector';
@@ -48,7 +48,7 @@ const osmCategoryConfig: OSMCategoryConfig[] = [
   {
     id: 'water_bodies',
     namePrefix: 'OSM Water Bodies',
-    overpassQueryFragment: (bboxStr) => `(nwr[natural="water"](bbox:${bboxStr}); nwr[landuse="reservoir"](bbox:${bboxStr}););`,
+    overpassQueryFragment: (bboxStr) => `nwr[natural="water"](bbox:${bboxStr});\nnwr[landuse="reservoir"](bbox:${bboxStr});`,
     matcher: (tags) => tags && (tags.natural === 'water' || tags.landuse === 'reservoir'),
     style: new Style({ fill: new Fill({ color: 'rgba(58,134,255,0.4)' }), stroke: new Stroke({ color: '#3a86ff', width: 1 }) })
   },
@@ -62,14 +62,14 @@ const osmCategoryConfig: OSMCategoryConfig[] = [
   {
     id: 'admin_boundaries',
     namePrefix: 'OSM Admin Boundaries',
-    overpassQueryFragment: (bboxStr) => `rel[boundary="administrative"][admin_level](bbox:${bboxStr});`,
+    overpassQueryFragment: (bboxStr) => `nwr[boundary="administrative"][admin_level](bbox:${bboxStr});`,
     matcher: (tags) => tags && tags.boundary === 'administrative' && tags.admin_level,
     style: new Style({ stroke: new Stroke({ color: '#ff006e', width: 2, lineDash: [4, 8] }) })
   },
   {
     id: 'green_areas',
     namePrefix: 'OSM Green Areas',
-    overpassQueryFragment: (bboxStr) => `(nwr[leisure="park"](bbox:${bboxStr}); nwr[landuse="forest"](bbox:${bboxStr}); nwr[natural="wood"](bbox:${bboxStr}););`,
+    overpassQueryFragment: (bboxStr) => `nwr[leisure="park"](bbox:${bboxStr});\nnwr[landuse="forest"](bbox:${bboxStr});\nnwr[natural="wood"](bbox:${bboxStr});`,
     matcher: (tags) => tags && (tags.leisure === 'park' || tags.landuse === 'forest' || tags.natural === 'wood'),
     style: new Style({ fill: new Fill({ color: 'rgba(13,166,75,0.4)' }), stroke: new Stroke({ color: '#0da64b', width: 1 }) })
   },
@@ -107,7 +107,6 @@ export default function GeoMapperClient() {
 
   const { toast } = useToast();
 
-  // Ensure these refs are correctly initialized with useRef(null)
   const drawingLayerRef = useRef<VectorLayerType<VectorSourceType<OLFeature<any>>> | null>(null);
   const drawingSourceRef = useRef<VectorSourceType<OLFeature<any>> | null>(null);
   const drawInteractionRef = useRef<Draw | null>(null);
@@ -130,7 +129,6 @@ export default function GeoMapperClient() {
       prevLayers.map(layer => {
         if (layer.id === layerId) {
           const newVisibility = !layer.visible;
-          // Note: olLayer visibility is now handled by the useEffect below
           return { ...layer, visible: newVisibility };
         }
         return layer;
@@ -141,8 +139,6 @@ export default function GeoMapperClient() {
   const setMapInstance = useCallback((mapInstance: OLMap) => {
     mapRef.current = mapInstance;
     if (mapRef.current && !drawingLayerRef.current) {
-      // This block initializes the drawing layer ONCE when the map is set
-      // and if the drawing layer hasn't been initialized yet.
       if (drawingSourceRef && typeof drawingSourceRef === 'object' && 'current' in drawingSourceRef) {
         drawingSourceRef.current = new VectorSource({ wrapX: false });
       } else {
@@ -152,7 +148,7 @@ export default function GeoMapperClient() {
       
       if (drawingLayerRef && typeof drawingLayerRef === 'object' && 'current' in drawingLayerRef) {
         drawingLayerRef.current = new VectorLayer({
-          source: drawingSourceRef.current, // drawingSourceRef.current should now be valid
+          source: drawingSourceRef.current,
           style: new Style({
             fill: new Fill({ color: 'rgba(0, 150, 255, 0.2)' }),
             stroke: new Stroke({ color: '#007bff', width: 2 }),
@@ -162,7 +158,7 @@ export default function GeoMapperClient() {
               stroke: new Stroke({ color: '#ffffff', width: 1.5 })
             }),
           }),
-          zIndex: 10
+          zIndex: 10 // Ensure drawing layer is on top
         });
         mapRef.current.addLayer(drawingLayerRef.current);
       } else {
@@ -172,10 +168,13 @@ export default function GeoMapperClient() {
   }, []);
 
 
-  useEffect(() => {
+ useEffect(() => {
     if (!mapRef.current) return;
     const currentMap = mapRef.current;
 
+    // Store the base layer and drawing layer to re-add them in order if needed
+    const baseLayer = currentMap.getLayers().getArray().find(l => l.get('name') === 'OSMBaseLayer');
+    
     // Get current vector layers on the map (excluding base and drawing layer)
     const olMapLayers = currentMap.getLayers().getArray()
       .filter(l => l.get('name') !== 'OSMBaseLayer' && l !== drawingLayerRef.current) as VectorLayerType<VectorSourceType<OLFeature<any>>>[];
@@ -189,12 +188,15 @@ export default function GeoMapperClient() {
 
     // Add/update layers from state
     layers.forEach(appLayer => {
-      // Check if layer is already on the map by reference
       const existingOlLayer = currentMap.getLayers().getArray().includes(appLayer.olLayer);
       if (!existingOlLayer) {
         currentMap.addLayer(appLayer.olLayer);
       }
-      appLayer.olLayer.setVisible(appLayer.visible); // Ensure visibility is correctly set
+      appLayer.olLayer.setVisible(appLayer.visible);
+      // Ensure drawing layer is always on top of other vector layers
+      if (drawingLayerRef.current) {
+        drawingLayerRef.current.setZIndex(10); 
+      }
     });
 
   }, [layers, mapRef]);
@@ -206,7 +208,7 @@ export default function GeoMapperClient() {
     const clickedPixel = mapRef.current.getEventPixel(event.originalEvent);
     let featureFound = false;
     mapRef.current.forEachFeatureAtPixel(clickedPixel, (feature, layer) => {
-      if (featureFound || layer === drawingLayerRef.current) return; // Ignore drawing layer features
+      if (featureFound || layer === drawingLayerRef.current) return; 
       const properties = feature.getProperties();
       const attributesToShow: Record<string, any> = {};
       for (const key in properties) {
@@ -345,6 +347,7 @@ export default function GeoMapperClient() {
         );
         out geom;
       `;
+      console.log("Overpass Query:", overpassQuery); // For debugging
 
       const response = await fetch('https://overpass-api.de/api/interpreter', {
         method: 'POST',
@@ -353,6 +356,8 @@ export default function GeoMapperClient() {
       });
 
       if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("Overpass API error details:", errorBody);
         throw new Error(`Overpass API error: ${response.status} ${response.statusText}`);
       }
 
@@ -396,7 +401,6 @@ export default function GeoMapperClient() {
       toast({ title: "Error Fetching OSM Data", description: error.message || "An unknown error occurred.", variant: "destructive" });
     } finally {
       setIsFetchingOSM(false);
-      // Clear the drawn polygon used for querying after fetching OSM data
       if (drawingSourceRef.current && drawnFeature) {
         const drawnFeatures = drawingSourceRef.current.getFeatures();
         if (drawnFeatures.includes(drawnFeature)) {
@@ -409,7 +413,7 @@ export default function GeoMapperClient() {
 
   const toggleDrawingTool = useCallback((toolType: 'Polygon' | 'LineString' | 'Point') => {
     if (!mapRef.current || !drawingSourceRef.current) return;
-    if (isInspectModeActive) setIsInspectModeActive(false); // Deactivate inspect mode if drawing
+    if (isInspectModeActive) setIsInspectModeActive(false); 
 
     if (drawInteractionRef.current) {
       mapRef.current.removeInteraction(drawInteractionRef.current);
@@ -418,7 +422,7 @@ export default function GeoMapperClient() {
     }
 
     if (activeDrawTool === toolType) {
-      setActiveDrawTool(null); // Deactivate if same tool is clicked
+      setActiveDrawTool(null); 
     } else {
       const newDrawInteraction = new Draw({
         source: drawingSourceRef.current,
@@ -426,7 +430,7 @@ export default function GeoMapperClient() {
       });
 
       newDrawInteraction.on('drawend', (event) => {
-        if (toolType === 'Polygon') { // Only fetch OSM data for Polygons
+        if (toolType === 'Polygon') { 
            fetchOSMData(event.feature);
         }
       });
@@ -511,12 +515,12 @@ export default function GeoMapperClient() {
           </div>
 
           {!isCollapsed && (
-            <div className="flex-1 min-h-0 overflow-y-auto bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}> {/* Adjusted maxHeight */}
+            <div className="flex-1 min-h-0 overflow-y-auto bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}>
               <MapControls
                   onAddLayer={addLayer}
                   layers={layers}
                   onToggleLayerVisibility={toggleLayerVisibility}
-                  onRemoveLayer={removeLayer} // Pass removeLayer
+                  onRemoveLayer={removeLayer}
                   isInspectModeActive={isInspectModeActive}
                   onToggleInspectMode={() => setIsInspectModeActive(!isInspectModeActive)}
                   selectedFeatureAttributes={selectedFeatureAttributes}
@@ -537,3 +541,5 @@ export default function GeoMapperClient() {
     </div>
   );
 }
+
+    
