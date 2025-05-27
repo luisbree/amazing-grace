@@ -6,7 +6,7 @@ import type { Map as OLMap, Feature } from 'ol';
 import type VectorLayerType from 'ol/layer/Vector';
 import type VectorSourceType from 'ol/source/Vector';
 import type { Extent } from 'ol/extent';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, MousePointerClick, XCircle, ZoomIn } from 'lucide-react';
 
 import MapView from '@/components/map-view';
 import MapControls from '@/components/map-controls';
@@ -61,27 +61,21 @@ export default function GeoMapperClient() {
     if (!mapRef.current) return;
     const currentMap = mapRef.current;
 
-    const baseLayer = currentMap.getLayers().item(0);
-    if (!baseLayer) {
-        console.error("Base map layer not found!");
-        return;
-    }
+    const baseLayer = currentMap.getLayers().item(0); // Assuming base layer is always at index 0
     
+    // Remove all vector layers (layers after the base map)
     const olMapVectorLayers = currentMap.getLayers().getArray().slice(1) as VectorLayerType<VectorSourceType<Feature<any>>>[];
     olMapVectorLayers.forEach(olMapLayer => {
       currentMap.removeLayer(olMapLayer);
     });
 
+    // Re-add layers from state
     layers.forEach(appLayer => {
-      // Ensure the layer isn't already on the map to prevent errors, though the clear & re-add should handle this.
-      const existingOlLayer = currentMap.getLayers().getArray().find(ol => ol === appLayer.olLayer);
-      if (!existingOlLayer) {
-        currentMap.addLayer(appLayer.olLayer);
-      }
+      currentMap.addLayer(appLayer.olLayer);
       appLayer.olLayer.setVisible(appLayer.visible);
     });
 
-  }, [layers]);
+  }, [layers, mapRef]);
 
 
   const handleMapClick = useCallback((event: any) => {
@@ -158,8 +152,7 @@ export default function GeoMapperClient() {
       panelX: position.x,
       panelY: position.y,
     };
-    console.log("Drag Start:", dragStartRef.current);
-    e.preventDefault(); // Prevent text selection during drag
+    e.preventDefault(); 
   }, [position.x, position.y]);
 
   useEffect(() => {
@@ -175,32 +168,20 @@ export default function GeoMapperClient() {
       const mapRect = mapAreaRef.current.getBoundingClientRect();
       const panelRect = panelRef.current.getBoundingClientRect();
       
-      // Defensive check for panelRect dimensions
       if (panelRect.width === 0 || panelRect.height === 0 || mapRect.width === 0 || mapRect.height === 0) {
-        console.warn("Panel or map dimensions are zero during drag. Aborting move.", { panelRect, mapRect });
-        // Potentially stop dragging if dimensions are invalid to prevent issues
-        // setIsDragging(false); 
         return; 
       }
       
       newX = Math.max(0, Math.min(newX, mapRect.width - panelRect.width));
       newY = Math.max(0, Math.min(newY, mapRect.height - panelRect.height));
 
-      // Defensive check for NaN positions
       if (isNaN(newX) || isNaN(newY)) {
-        console.error("Calculated NaN position during drag. Aborting move.", { newX, newY, dx, dy, panelX: dragStartRef.current.panelX, panelY: dragStartRef.current.panelY, panelRect, mapRect });
-        // Potentially stop dragging if position is invalid
-        // setIsDragging(false);
         return;
       }
-      // console.log("Dragging:", { newX, newY, panelWidth: panelRect.width, panelHeight: panelRect.height });
       setPosition({ x: newX, y: newY });
     };
 
     const handleMouseUp = () => {
-      if (isDragging) { // Only log if a drag was actually in progress
-        console.log("Drag End");
-      }
       setIsDragging(false);
     };
 
@@ -216,7 +197,7 @@ export default function GeoMapperClient() {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging]); // Dependencies: isDragging, mapAreaRef, panelRef (refs are stable, so primarily isDragging)
+  }, [isDragging]); 
 
 
   return (
@@ -230,18 +211,15 @@ export default function GeoMapperClient() {
         
         <div
           ref={panelRef}
-          className="absolute rounded-lg shadow-xl flex flex-col text-white overflow-hidden"
+          className="absolute bg-gray-800/60 backdrop-blur-md rounded-lg shadow-xl flex flex-col text-white overflow-hidden z-30"
           style={{
             width: '350px',
             top: `${position.y}px`,
             left: `${position.x}px`,
-            background: 'rgba(255, 0, 0, 0.7)', // Bright red, semi-transparent
-            zIndex: 9999, // Very high z-index
-            padding: '0px', // Remove padding if card manages it
           }}
         >
           <div 
-            className="p-2 bg-gray-700/80 flex items-center justify-between cursor-grab rounded-t-lg" // Ensure this has some background
+            className="p-2 bg-gray-700/80 flex items-center justify-between cursor-grab rounded-t-lg"
             onMouseDown={handleMouseDown}
           >
             <h2 className="text-sm font-semibold">Herramientas del Mapa</h2>
@@ -252,8 +230,7 @@ export default function GeoMapperClient() {
           </div>
 
           {!isCollapsed && (
-            <div className="flex-1 min-h-0 overflow-y-auto bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' /* Adjust based on header and other elements */ }}>
-              {/* MapControls itself should have a transparent background, its Cards can have their own */}
+            <div className="flex-1 min-h-0 overflow-y-auto bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}>
               <MapControls 
                   onAddLayer={addLayer}
                   layers={layers}
