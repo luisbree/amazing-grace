@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Upload, Layers, FileText, Loader2, MousePointerClick, XCircle, ZoomIn } from 'lucide-react';
+import { Upload, Layers, FileText, Loader2, MousePointerClick, XCircle, ZoomIn, Trash2 } from 'lucide-react';
 import type { MapLayer } from '@/components/geo-mapper-client';
 import { useToast } from "@/hooks/use-toast";
 
@@ -24,6 +24,7 @@ interface MapControlsProps {
   onAddLayer: (layer: MapLayer) => void;
   layers: MapLayer[];
   onToggleLayerVisibility: (layerId: string) => void;
+  onRemoveLayer: (layerId: string) => void;
   isInspectModeActive: boolean;
   onToggleInspectMode: () => void;
   selectedFeatureAttributes: Record<string, any> | null;
@@ -35,6 +36,7 @@ const MapControls: React.FC<MapControlsProps> = ({
   onAddLayer, 
   layers, 
   onToggleLayerVisibility,
+  onRemoveLayer,
   isInspectModeActive,
   onToggleInspectMode,
   selectedFeatureAttributes,
@@ -51,10 +53,10 @@ const MapControls: React.FC<MapControlsProps> = ({
     if (event.target.files) {
       if (event.target.files.length > 1) {
         setSelectedMultipleFiles(event.target.files);
-        setSelectedFile(null); // Clear single file if multiple are selected
+        setSelectedFile(null); 
       } else if (event.target.files.length === 1) {
         setSelectedFile(event.target.files[0]);
-        setSelectedMultipleFiles(null); // Clear multiple files if single is selected
+        setSelectedMultipleFiles(null); 
       } else {
         setSelectedFile(null);
         setSelectedMultipleFiles(null);
@@ -71,14 +73,13 @@ const MapControls: React.FC<MapControlsProps> = ({
 
   const handleFileUpload = useCallback(async () => {
     if (!selectedFile && !selectedMultipleFiles) {
-      toast({ title: "No file selected", description: "Please choose a file or files to upload.", variant: "destructive" });
+      toast({ title: "Ningún archivo seleccionado", description: "Por favor, elija un archivo o archivos para cargar.", variant: "destructive" });
       return;
     }
     setIsLoading(true);
 
     try {
       if (selectedMultipleFiles && selectedMultipleFiles.length > 0) {
-        // Handle multiple files (Shapefile components)
         let shpFileBuffer: ArrayBuffer | null = null;
         let dbfFileBuffer: ArrayBuffer | null = null;
         let shapeFileName = "Shapefile";
@@ -88,7 +89,7 @@ const MapControls: React.FC<MapControlsProps> = ({
           const fileNameLower = file.name.toLowerCase();
           if (fileNameLower.endsWith('.shp')) {
             shpFileBuffer = await file.arrayBuffer();
-            shapeFileName = file.name;
+            shapeFileName = file.name.substring(0, file.name.lastIndexOf('.'));
           } else if (fileNameLower.endsWith('.dbf')) {
             dbfFileBuffer = await file.arrayBuffer();
           }
@@ -106,25 +107,30 @@ const MapControls: React.FC<MapControlsProps> = ({
             const vectorLayer = new VectorLayer({ source: vectorSource });
             const newLayerId = `${fileInputId}-${shapeFileName}-${Date.now()}`;
             onAddLayer({ id: newLayerId, name: shapeFileName, olLayer: vectorLayer, visible: true });
-            toast({ title: "Layer Added", description: `Successfully added ${shapeFileName} to the map.` });
+            toast({ title: "Capa Añadida", description: `Se añadió correctamente ${shapeFileName} al mapa.` });
           } else {
-            throw new Error(`No features found in Shapefile ${shapeFileName} or files are empty.`);
+            throw new Error(`No se encontraron entidades en el Shapefile ${shapeFileName} o los archivos están vacíos.`);
           }
         } else {
-          throw new Error("A Shapefile requires at least .shp and .dbf files. Please select both.");
+          throw new Error("Un Shapefile requiere al menos archivos .shp y .dbf. Por favor, seleccione ambos.");
         }
       } else if (selectedFile) {
-        // Handle single file (KML, GeoJSON, ZIP)
         const fileName = selectedFile.name;
+        const fileBaseName = fileName.substring(0, fileName.lastIndexOf('.'));
         const fileExtension = fileName.split('.').pop()?.toLowerCase();
 
         if (fileExtension === 'zip') {
           const zip = await JSZip.loadAsync(await selectedFile.arrayBuffer());
           let shpFile: JSZip.JSZipObject | null = null;
           let dbfFile: JSZip.JSZipObject | null = null;
+          let shpFileNameInZip = fileBaseName;
+
 
           zip.forEach((relativePath, file) => {
-            if (relativePath.toLowerCase().endsWith('.shp')) shpFile = file;
+            if (relativePath.toLowerCase().endsWith('.shp')) {
+               shpFile = file;
+               shpFileNameInZip = relativePath.substring(0, relativePath.lastIndexOf('.'));
+            }
             if (relativePath.toLowerCase().endsWith('.dbf')) dbfFile = file;
           });
 
@@ -139,17 +145,16 @@ const MapControls: React.FC<MapControlsProps> = ({
             if (features && features.length > 0) {
               const vectorSource = new VectorSource({ features });
               const vectorLayer = new VectorLayer({ source: vectorSource });
-              const newLayerId = `${fileInputId}-${fileName}-${Date.now()}`;
-              onAddLayer({ id: newLayerId, name: fileName, olLayer: vectorLayer, visible: true });
-              toast({ title: "Layer Added", description: `Successfully added ${fileName} (Shapefile from ZIP) to the map.` });
+              const newLayerId = `${fileInputId}-${shpFileNameInZip}-${Date.now()}`;
+              onAddLayer({ id: newLayerId, name: shpFileNameInZip, olLayer: vectorLayer, visible: true });
+              toast({ title: "Capa Añadida", description: `Se añadió correctamente ${shpFileNameInZip} (Shapefile desde ZIP) al mapa.` });
             } else {
-              throw new Error(`No features found in Shapefile within ${fileName}.`);
+              throw new Error(`No se encontraron entidades en el Shapefile dentro de ${fileName}.`);
             }
           } else {
-            throw new Error(`ZIP file ${fileName} does not contain required .shp and .dbf files.`);
+            throw new Error(`El archivo ZIP ${fileName} no contiene los archivos .shp y .dbf requeridos.`);
           }
         } else {
-          // KML or GeoJSON
           const fileContent = await selectedFile.text();
           let features: Feature[] | undefined;
           const commonFormatOptions = { dataProjection: 'EPSG:4326', featureProjection: 'EPSG:3857' };
@@ -159,23 +164,23 @@ const MapControls: React.FC<MapControlsProps> = ({
           } else if (fileExtension === 'geojson' || fileExtension === 'json') {
             features = new GeoJSON().readFeatures(fileContent, commonFormatOptions);
           } else {
-            throw new Error(`Unsupported file type: .${fileExtension}. Please upload KML, GeoJSON, or a ZIP containing a Shapefile.`);
+            throw new Error(`Tipo de archivo no soportado: .${fileExtension}. Por favor, cargue KML, GeoJSON, o un ZIP conteniendo un Shapefile.`);
           }
 
           if (features && features.length > 0) {
             const vectorSource = new VectorSource({ features });
             const vectorLayer = new VectorLayer({ source: vectorSource });
-            const newLayerId = `${fileInputId}-${fileName}-${Date.now()}`;
-            onAddLayer({ id: newLayerId, name: fileName, olLayer: vectorLayer, visible: true });
-            toast({ title: "Layer Added", description: `Successfully added ${fileName} to the map.` });
+            const newLayerId = `${fileInputId}-${fileBaseName}-${Date.now()}`;
+            onAddLayer({ id: newLayerId, name: fileBaseName, olLayer: vectorLayer, visible: true });
+            toast({ title: "Capa Añadida", description: `Se añadió correctamente ${fileBaseName} al mapa.` });
           } else {
-            throw new Error(`No features found in ${fileName} or file is empty.`);
+            throw new Error(`No se encontraron entidades en ${fileName} o el archivo está vacío.`);
           }
         }
       }
     } catch (parseError: any) {
-      console.error("Error processing file:", parseError);
-      toast({ title: "Processing Error", description: parseError.message || "An unknown error occurred.", variant: "destructive" });
+      console.error("Error procesando archivo:", parseError);
+      toast({ title: "Error de Procesamiento", description: parseError.message || "Ocurrió un error desconocido.", variant: "destructive" });
     } finally {
       setIsLoading(false);
       resetFileInput();
@@ -184,13 +189,12 @@ const MapControls: React.FC<MapControlsProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-transparent text-white">
-      {/* File Upload Section */}
       <Card className="bg-transparent shadow-none border-0 border-b border-white/20 rounded-none">
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center text-base font-semibold text-white">
             <Upload className="mr-2 h-4 w-4 text-primary" /> Cargar Capa
           </CardTitle>
-          <CardDescription className="text-xs text-gray-300/80">KML, GeoJSON, Shapefile (individual o en .zip)</CardDescription>
+          <CardDescription className="text-xs text-gray-300/80">KML, GeoJSON, Shapefile (.shp + .dbf o en .zip)</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 pb-3">
           <div>
@@ -198,7 +202,7 @@ const MapControls: React.FC<MapControlsProps> = ({
             <Input
               id={fileInputId}
               type="file"
-              multiple // Allow multiple file selection
+              multiple
               onChange={handleFileChange}
               accept=".kml,.geojson,.json,.zip,.shp,.dbf"
               className="mt-1 file:mr-2 file:py-1.5 file:px-2 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30 text-white/90 border-white/30 placeholder-gray-400 text-xs h-8"
@@ -211,7 +215,6 @@ const MapControls: React.FC<MapControlsProps> = ({
         </CardContent>
       </Card>
 
-      {/* Layer Management Section */}
       <Card className="flex-1 flex flex-col min-h-0 bg-transparent shadow-none border-0 border-b border-white/20 rounded-none">
         <CardHeader className="pb-3 pt-3">
           <CardTitle className="flex items-center text-base font-semibold text-white">
@@ -234,22 +237,31 @@ const MapControls: React.FC<MapControlsProps> = ({
                     <Label htmlFor={`layer-toggle-${layer.id}`} className="flex-1 cursor-default truncate pr-2 text-xs font-medium text-white" title={layer.name}>
                       {layer.name}
                     </Label>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-1">
                       <Checkbox
                         id={`layer-toggle-${layer.id}`}
                         checked={layer.visible}
                         onCheckedChange={() => onToggleLayerVisibility(layer.id)}
                         className="data-[state=checked]:bg-accent data-[state=checked]:border-accent-foreground border-muted-foreground/70"
-                        aria-label={`Toggle visibility for ${layer.name}`}
+                        aria-label={`Alternar visibilidad para ${layer.name}`}
                       />
                       <Button
                         variant="ghost"
                         size="icon"
                         onClick={() => onZoomToLayerExtent(layer.id)}
                         className="h-6 w-6 text-white hover:bg-gray-600/80 p-0"
-                        aria-label={`Zoom to ${layer.name}`}
+                        aria-label={`Zoom a ${layer.name}`}
                       >
                         <ZoomIn className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onRemoveLayer(layer.id)}
+                        className="h-6 w-6 text-white hover:bg-red-500/30 hover:text-red-400 p-0"
+                        aria-label={`Eliminar ${layer.name}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   </li>
@@ -260,7 +272,6 @@ const MapControls: React.FC<MapControlsProps> = ({
         </CardContent>
       </Card>
 
-       {/* Entity Inspector Section */}
       <Card className="flex-1 flex flex-col min-h-0 bg-transparent shadow-none border-0 rounded-none">
         <CardHeader className="pb-3 pt-3">
           <CardTitle className="flex items-center text-base font-semibold text-white">
@@ -310,6 +321,4 @@ const MapControls: React.FC<MapControlsProps> = ({
 };
 
 export default MapControls;
-
-
     

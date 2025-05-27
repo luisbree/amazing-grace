@@ -6,7 +6,7 @@ import type { Map as OLMap, Feature } from 'ol';
 import type VectorLayerType from 'ol/layer/Vector';
 import type VectorSourceType from 'ol/source/Vector';
 import type { Extent } from 'ol/extent';
-import { ChevronDown, ChevronUp, MousePointerClick, XCircle, ZoomIn } from 'lucide-react';
+import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react'; // Trash2 might be used in MapControls
 
 import MapView from '@/components/map-view';
 import MapControls from '@/components/map-controls';
@@ -42,6 +42,11 @@ export default function GeoMapperClient() {
     setLayers(prevLayers => [...prevLayers, newLayer]);
   }, []);
 
+  const removeLayer = useCallback((layerId: string) => {
+    setLayers(prevLayers => prevLayers.filter(layer => layer.id !== layerId));
+    toast({ title: "Capa Eliminada", description: "La capa ha sido eliminada del mapa." });
+  }, [toast]);
+
   const toggleLayerVisibility = useCallback((layerId: string) => {
     setLayers(prevLayers =>
       prevLayers.map(layer => {
@@ -61,21 +66,19 @@ export default function GeoMapperClient() {
     if (!mapRef.current) return;
     const currentMap = mapRef.current;
 
-    const baseLayer = currentMap.getLayers().item(0); // Assuming base layer is always at index 0
+    const baseLayer = currentMap.getLayers().item(0); 
     
-    // Remove all vector layers (layers after the base map)
     const olMapVectorLayers = currentMap.getLayers().getArray().slice(1) as VectorLayerType<VectorSourceType<Feature<any>>>[];
     olMapVectorLayers.forEach(olMapLayer => {
       currentMap.removeLayer(olMapLayer);
     });
 
-    // Re-add layers from state
     layers.forEach(appLayer => {
       currentMap.addLayer(appLayer.olLayer);
       appLayer.olLayer.setVisible(appLayer.visible);
     });
 
-  }, [layers, mapRef]);
+  }, [layers]);
 
 
   const handleMapClick = useCallback((event: any) => {
@@ -127,14 +130,16 @@ export default function GeoMapperClient() {
     const layer = layers.find(l => l.id === layerId);
     if (layer && layer.olLayer) {
       const source = layer.olLayer.getSource();
-      if (source) {
+      if (source && source.getFeatures().length > 0) {
         const extent: Extent = source.getExtent();
         if (extent && extent.every(isFinite) && (extent[2] - extent[0] > 0) && (extent[3] - extent[1] > 0)) {
           mapRef.current.getView().fit(extent, { padding: [50, 50, 50, 50], duration: 1000, maxZoom: 18 });
           toast({ title: "Zoom a la Capa", description: `Mostrando la extensión de ${layer.name}.` });
         } else {
-          toast({ title: "Extensión no Válida", description: `La capa "${layer.name}" podría estar vacía o no tener una extensión válida.`, variant: "destructive" });
+          toast({ title: "Extensión no Válida", description: `La capa "${layer.name}" podría estar vacía, no tener una extensión válida o las coordenadas podrían ser inválidas.`, variant: "destructive" });
         }
+      } else {
+        toast({ title: "Capa Vacía", description: `La capa "${layer.name}" no contiene entidades para calcular una extensión.`, variant: "destructive" });
       }
     }
   }, [layers, toast]);
@@ -235,6 +240,7 @@ export default function GeoMapperClient() {
                   onAddLayer={addLayer}
                   layers={layers}
                   onToggleLayerVisibility={toggleLayerVisibility}
+                  onRemoveLayer={removeLayer}
                   isInspectModeActive={isInspectModeActive}
                   onToggleInspectMode={() => setIsInspectModeActive(!isInspectModeActive)}
                   selectedFeatureAttributes={selectedFeatureAttributes}
