@@ -3,19 +3,21 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import type { Map as OLMap, Feature } from 'ol';
-import type VectorLayer from 'ol/layer/Vector';
-import type VectorSource from 'ol/source/Vector';
+import type VectorLayerType from 'ol/layer/Vector';
+import type VectorSourceType from 'ol/source/Vector';
 import type { Extent } from 'ol/extent';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 import MapView from '@/components/map-view';
 import MapControls from '@/components/map-controls';
 import { Toaster } from "@/components/ui/toaster";
 import { useToast } from "@/hooks/use-toast";
+import { Button } from '@/components/ui/button';
 
 export interface MapLayer {
   id: string;
   name: string;
-  olLayer: VectorLayer<VectorSource<Feature<any>>>;
+  olLayer: VectorLayerType<VectorSourceType<Feature<any>>>;
   visible: boolean;
 }
 
@@ -26,6 +28,8 @@ export default function GeoMapperClient() {
 
   const [isInspectModeActive, setIsInspectModeActive] = useState(false);
   const [selectedFeatureAttributes, setSelectedFeatureAttributes] = useState<Record<string, any> | null>(null);
+  const [isCollapsed, setIsCollapsed] = useState(false); // State for panel collapse
+
   const { toast } = useToast();
 
   const addLayer = useCallback((newLayer: MapLayer) => {
@@ -36,7 +40,9 @@ export default function GeoMapperClient() {
     setLayers(prevLayers =>
       prevLayers.map(layer => {
         if (layer.id === layerId) {
-          return { ...layer, visible: !layer.visible };
+          const newVisibility = !layer.visible;
+          layer.olLayer.setVisible(newVisibility); // Directly update OL layer visibility
+          return { ...layer, visible: newVisibility };
         }
         return layer;
       })
@@ -50,31 +56,30 @@ export default function GeoMapperClient() {
   useEffect(() => {
     if (!mapRef.current) return;
     const currentMap = mapRef.current;
-    
-    // Preserve base layer (OSM)
+
+    // Get the base layer (OSM)
     const baseLayer = currentMap.getLayers().item(0);
     if (!baseLayer) {
         console.error("Base map layer not found!");
         return;
     }
 
-    // Get current vector layers on the map
-    const olMapLayers = currentMap.getLayers().getArray().slice(1); // Exclude base layer
+    // Get current vector layers on the map (all layers except the first one)
+    const olMapVectorLayers = currentMap.getLayers().getArray().slice(1) as VectorLayerType<VectorSourceType<Feature<any>>>[];
 
     // Remove vector layers from map that are no longer in the state
-    olMapLayers.forEach(olMapLayer => {
-        if (olMapLayer instanceof VectorLayer) {
-            const appLayerExists = layers.find(appLyr => appLyr.olLayer === olMapLayer);
-            if (!appLayerExists) {
-                currentMap.removeLayer(olMapLayer);
-            }
+    olMapVectorLayers.forEach(olMapLayer => {
+        const appLayerExists = layers.find(appLyr => appLyr.olLayer === olMapLayer);
+        if (!appLayerExists) {
+            currentMap.removeLayer(olMapLayer);
         }
     });
 
     // Add/update layers from state
     layers.forEach(appLayer => {
-        const existingOlLayer = olMapLayers.find(olLyr => olLyr === appLayer.olLayer);
-        if (!existingOlLayer) {
+        // Check if the OpenLayers layer instance is already on the map
+        const olLayerOnMap = olMapVectorLayers.find(olLyr => olLyr === appLayer.olLayer);
+        if (!olLayerOnMap) {
             currentMap.addLayer(appLayer.olLayer);
         }
         appLayer.olLayer.setVisible(appLayer.visible);
@@ -88,7 +93,7 @@ export default function GeoMapperClient() {
     const clickedPixel = mapRef.current.getEventPixel(event.originalEvent);
     let featureFound = false;
     mapRef.current.forEachFeatureAtPixel(clickedPixel, (feature) => {
-      if (featureFound) return; // Process only the first feature found
+      if (featureFound) return; 
       const properties = feature.getProperties();
       const attributesToShow: Record<string, any> = {};
       for (const key in properties) {
@@ -99,7 +104,7 @@ export default function GeoMapperClient() {
       setSelectedFeatureAttributes(attributesToShow);
       featureFound = true;
       toast({ title: "Entidad Seleccionada", description: "Atributos mostrados en el panel." });
-      return true; // Stop iterating through features
+      return true; 
     });
     if (!featureFound) {
       setSelectedFeatureAttributes(null);
@@ -112,7 +117,7 @@ export default function GeoMapperClient() {
         mapRef.current.on('singleclick', handleMapClick);
       } else {
         mapRef.current.un('singleclick', handleMapClick);
-        setSelectedFeatureAttributes(null); // Clear attributes when inspect mode is deactivated
+        setSelectedFeatureAttributes(null); 
       }
     }
     return () => {
@@ -134,7 +139,6 @@ export default function GeoMapperClient() {
       const source = layer.olLayer.getSource();
       if (source) {
         const extent: Extent = source.getExtent();
-        // Check if extent is valid and finite
         if (extent && extent.every(isFinite) && (extent[2] - extent[0] > 0) && (extent[3] - extent[1] > 0)) {
           mapRef.current.getView().fit(extent, { padding: [50, 50, 50, 50], duration: 1000, maxZoom: 18 });
           toast({ title: "Zoom a la Capa", description: `Mostrando la extensión de ${layer.name}.` });
@@ -145,6 +149,10 @@ export default function GeoMapperClient() {
     }
   }, [layers, toast]);
 
+  const toggleCollapse = () => {
+    setIsCollapsed(!isCollapsed);
+  };
+
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
       <header className="bg-primary text-primary-foreground p-4 shadow-md flex items-center">
@@ -154,17 +162,30 @@ export default function GeoMapperClient() {
       <div ref={mapAreaRef} className="relative flex-1 overflow-hidden">
         <MapView mapRef={mapRef} setMapInstance={setMapInstance} />
         
-        {/* Simplified Panel for Debugging */}
         <div
           className="absolute z-[50] bg-blue-700/70 backdrop-blur-md rounded-lg shadow-xl flex flex-col text-white overflow-hidden"
           style={{
             top: '16px',
             left: '16px',
             width: '350px',
-            maxHeight: 'calc(100vh - 40px)', // Max height to prevent overflow
+            // Max height is handled by the inner content div
           }}
         >
-           <div className="flex-1 min-h-0 overflow-y-auto"> {/* Added overflow-y-auto for scrolling content */}
+          {/* Title Bar for Collapse/Expand and Drag */}
+          <div 
+            className="p-2 bg-gray-700/80 flex items-center justify-between cursor-grab rounded-t-lg"
+            // onMouseDown will be added here later for drag
+          >
+            <h2 className="text-sm font-semibold">Herramientas del Mapa</h2>
+            <Button variant="ghost" size="icon" onClick={toggleCollapse} className="h-6 w-6 text-white hover:bg-gray-600/80">
+              {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+              <span className="sr-only">{isCollapsed ? 'Expandir' : 'Colapsar'}</span>
+            </Button>
+          </div>
+
+          {/* Collapsible Content */}
+          {!isCollapsed && (
+            <div className="flex-1 min-h-0 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 120px)' /* Adjust as needed */ }}>
               <MapControls 
                   onAddLayer={addLayer}
                   layers={layers}
@@ -175,7 +196,8 @@ export default function GeoMapperClient() {
                   onClearSelectedFeature={clearSelectedFeature}
                   onZoomToLayerExtent={zoomToLayerExtent}
               />
-           </div>
+            </div>
+          )}
         </div>
       </div>
       <Toaster />
