@@ -6,11 +6,14 @@ import type { Map as OLMap, Feature } from 'ol';
 import type VectorLayer from 'ol/layer/Vector';
 import type VectorSource from 'ol/source/Vector';
 import { ChevronUp, ChevronDown } from 'lucide-react';
+import type { Extent } from 'ol/extent'; // Import Extent type
+// import { transformExtent } from 'ol/proj'; // Not strictly needed if extent is already in view projection
 
 import MapView from '@/components/map-view';
 import MapControls from '@/components/map-controls';
 import { Toaster } from "@/components/ui/toaster";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
 export interface MapLayer {
   id: string;
@@ -23,22 +26,20 @@ export default function GeoMapperClient() {
   const [layers, setLayers] = useState<MapLayer[]>([]);
   const mapRef = useRef<OLMap | null>(null);
   const mapAreaRef = useRef<HTMLDivElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  // const panelRef = useRef<HTMLDivElement>(null); // Drag logic temporarily removed
 
-  const [position, setPosition] = useState({ x: 16, y: 16 });
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef({ x: 0, y: 0, panelX: 0, panelY: 0 });
+  // Drag logic temporarily removed
+  // const [position, setPosition] = useState({ x: 16, y: 16 });
+  // const [isDragging, setIsDragging] = useState(false);
+  // const dragStartRef = useRef({ x: 0, y: 0, panelX: 0, panelY: 0 });
+  
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isInspectModeActive, setIsInspectModeActive] = useState(false);
+  const [selectedFeatureAttributes, setSelectedFeatureAttributes] = useState<Record<string, any> | null>(null);
+  const { toast } = useToast();
 
   const addLayer = useCallback((newLayer: MapLayer) => {
-    setLayers(prevLayers => {
-      const updatedLayers = [...prevLayers, newLayer];
-      if (mapRef.current) {
-        mapRef.current.addLayer(newLayer.olLayer);
-        newLayer.olLayer.setVisible(newLayer.visible);
-      }
-      return updatedLayers;
-    });
+    setLayers(prevLayers => [...prevLayers, newLayer]);
   }, []);
 
   const toggleLayerVisibility = useCallback((layerId: string) => {
@@ -58,70 +59,113 @@ export default function GeoMapperClient() {
 
   const setMapInstance = useCallback((mapInstance: OLMap) => {
     mapRef.current = mapInstance;
-    layers.forEach(layer => {
-      if (mapRef.current && layer.olLayer && !mapRef.current.getLayers().getArray().includes(layer.olLayer)) {
-        mapRef.current.addLayer(layer.olLayer);
-        layer.olLayer.setVisible(layer.visible);
-      }
-    });
-  }, [layers]);
-
-  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (panelRef.current) {
-      setIsDragging(true);
-      dragStartRef.current = {
-        x: e.clientX,
-        y: e.clientY,
-        panelX: position.x,
-        panelY: position.y,
-      };
-      // Prevent text selection during drag
-      e.preventDefault();
-    }
-  }, [position.x, position.y]);
+    // Layer synchronization is handled by the useEffect below
+  }, []);
 
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging || !panelRef.current || !mapAreaRef.current) return;
+    if (!mapRef.current) return;
+    const currentMap = mapRef.current;
+  
+    // Get OpenLayers layers currently on the map, excluding the base layer (usually the first one)
+    const existingOlLayersOnMap = currentMap.getLayers().getArray().slice(1);
+  
+    // Add layers from React state to map if not already present
+    layers.forEach(appLayer => {
+      const olLayer = appLayer.olLayer;
+      if (!existingOlLayersOnMap.some(mapOlLayer => mapOlLayer === olLayer)) {
+        currentMap.addLayer(olLayer);
+      }
+      olLayer.setVisible(appLayer.visible); // Ensure visibility is synced
+    });
+  
+    // Remove layers from map if they are no longer in React state
+    existingOlLayersOnMap.forEach(olLayerOnMap => {
+      if (!layers.find(appLayer => appLayer.olLayer === olLayerOnMap)) {
+        currentMap.removeLayer(olLayerOnMap);
+      }
+    });
+  }, [layers]); // Rerun when layers state changes
 
-      const mapAreaRect = mapAreaRef.current.getBoundingClientRect();
-      const panelRect = panelRef.current.getBoundingClientRect();
 
-      let newX = e.clientX - dragStartRef.current.x + dragStartRef.current.panelX;
-      let newY = e.clientY - dragStartRef.current.y + dragStartRef.current.panelY;
+  const handleMapClick = useCallback((event: any) => {
+    if (!isInspectModeActive || !mapRef.current) return;
 
-      // Constrain within mapAreaRef boundaries
-      newX = Math.min(Math.max(0, newX), mapAreaRect.width - panelRect.width);
-      newY = Math.min(Math.max(0, newY), mapAreaRect.height - panelRect.height);
-      
-      // Prevent panel from going too far up if mapAreaRect.top is not 0 (e.g. due to header)
-      // This might need adjustment if header height changes or if mapAreaRef itself is scrolled
-      const headerHeight = document.querySelector('header')?.offsetHeight || 0;
-      newY = Math.max(newY, -mapAreaRect.top + headerHeight + 16); // 16 for some padding
-      // Ensure panel doesn't go below bottom edge of mapAreaRef
-      newY = Math.min(newY, mapAreaRect.height - panelRect.height);
+    const clickedPixel = mapRef.current.getEventPixel(event.originalEvent);
+    let featureFound = false;
 
+    mapRef.current.forEachFeatureAtPixel(clickedPixel, (feature) => {
+      if (featureFound) return; // Process only the first feature
 
-      setPosition({ x: newX, y: newY });
-    };
+      const properties = feature.getProperties();
+      const attributesToShow: Record<string, any> = {};
+      for (const key in properties) {
+        if (key !== 'geometry' && key !== feature.getGeometryName()) {
+          attributesToShow[key] = properties[key];
+        }
+      }
+      setSelectedFeatureAttributes(attributesToShow);
+      featureFound = true;
+      toast({ title: "Entidad Seleccionada", description: "Atributos mostrados en el panel." });
+      return true; // stop iteration
+    });
 
-    const handleMouseUp = () => {
-      setIsDragging(false);
-    };
-
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-    } else {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+    if (!featureFound) {
+      setSelectedFeatureAttributes(null);
+      // toast({ title: "Ninguna Entidad Encontrada", description: "Haz clic sobre una entidad para ver sus atributos.", variant: "default" });
     }
+  }, [isInspectModeActive, toast]);
 
+  useEffect(() => {
+    if (mapRef.current) {
+      if (isInspectModeActive) {
+        mapRef.current.on('singleclick', handleMapClick);
+      } else {
+        mapRef.current.un('singleclick', handleMapClick);
+        setSelectedFeatureAttributes(null); // Clear attributes when inspect mode is off
+      }
+    }
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      if (mapRef.current) {
+        mapRef.current.un('singleclick', handleMapClick);
+      }
     };
-  }, [isDragging]);
+  }, [isInspectModeActive, handleMapClick]);
+
+  const clearSelectedFeature = useCallback(() => {
+    setSelectedFeatureAttributes(null);
+    toast({ title: "Selección Limpiada", description: "Ya no hay ninguna entidad seleccionada." });
+  }, [toast]);
+  
+  const zoomToLayerExtent = useCallback((layerId: string) => {
+    if (!mapRef.current) return;
+    const layer = layers.find(l => l.id === layerId);
+    if (layer && layer.olLayer) {
+      const source = layer.olLayer.getSource();
+      if (source) {
+        const extent: Extent = source.getExtent();
+        // Check if extent is valid and not infinite
+        if (extent && extent.every(isFinite) && (extent[2] - extent[0] > 0) && (extent[3] - extent[1] > 0)) {
+          mapRef.current.getView().fit(extent, {
+            padding: [50, 50, 50, 50], 
+            duration: 1000, 
+            maxZoom: 18, 
+          });
+           toast({ title: "Zoom a la Capa", description: `Mostrando la extensión de ${layer.name}.` });
+        } else {
+           toast({ title: "Extensión no Válida", description: `La capa "${layer.name}" podría estar vacía o no tener una extensión válida.`, variant: "destructive" });
+        }
+      }
+    }
+  }, [layers, toast]);
+
+  // Drag logic temporarily removed
+  // const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+  //   // ...
+  // }, [position.x, position.y]);
+
+  // useEffect(() => {
+  //   // ... drag listeners ...
+  // }, [isDragging]);
 
   const toggleCollapse = () => {
     setIsCollapsed(!isCollapsed);
@@ -137,18 +181,19 @@ export default function GeoMapperClient() {
         <MapView mapRef={mapRef} layers={layers} setMapInstance={setMapInstance} />
         
         <div
-          ref={panelRef}
+          // ref={panelRef} // Drag logic temporarily removed
           className="absolute z-[50] bg-gray-800/60 backdrop-blur-md rounded-lg shadow-xl flex flex-col text-white overflow-hidden"
           style={{
-            transform: `translate(${position.x}px, ${position.y}px)`,
+            // transform: `translate(${position.x}px, ${position.y}px)`, // Drag logic temporarily removed
+            top: '16px', // Fixed position for debugging
+            left: '16px', // Fixed position for debugging
             width: '350px',
-            // maxHeight: isCollapsed ? 'auto' : 'calc(100vh - 116px)', // Height of header + some margin
-            // minHeight: isCollapsed ? 'auto' : '100px',
+            // maxHeight is implicitly handled by collapse
           }}
         >
           <div 
-            className="p-3 bg-gray-700/50 flex justify-between items-center cursor-grab active:cursor-grabbing"
-            onMouseDown={handleMouseDown}
+            className="p-3 bg-gray-700/50 flex justify-between items-center" // Removed cursor-grab as drag is off
+            // onMouseDown={handleMouseDown} // Drag logic temporarily removed
           >
             <span className="font-semibold text-sm">Herramientas del Mapa</span>
             <Button variant="ghost" size="icon" onClick={toggleCollapse} className="text-white hover:bg-gray-600/50 h-7 w-7">
@@ -158,11 +203,16 @@ export default function GeoMapperClient() {
           
           <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isCollapsed ? 'max-h-0' : 'max-h-[calc(100vh-160px)]'}`}>
             {!isCollapsed && (
-                 <div className="flex-1 min-h-0"> {/* This div will contain MapControls and allow it to scroll if needed */}
+                 <div className="flex-1 min-h-0">
                     <MapControls 
                         onAddLayer={addLayer}
                         layers={layers}
                         onToggleLayerVisibility={toggleLayerVisibility}
+                        isInspectModeActive={isInspectModeActive}
+                        onToggleInspectMode={() => setIsInspectModeActive(!isInspectModeActive)}
+                        selectedFeatureAttributes={selectedFeatureAttributes}
+                        onClearSelectedFeature={clearSelectedFeature}
+                        onZoomToLayerExtent={zoomToLayerExtent}
                     />
                  </div>
             )}
@@ -173,3 +223,4 @@ export default function GeoMapperClient() {
     </div>
   );
 }
+
