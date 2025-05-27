@@ -6,7 +6,7 @@ import type { Map as OLMap, Feature as OLFeature } from 'ol';
 import type VectorLayerType from 'ol/layer/Vector';
 import type VectorSourceType from 'ol/source/Vector';
 import type { Extent } from 'ol/extent';
-import { ChevronDown, ChevronUp, DownloadCloud, Trash2, ZoomIn, Eye, EyeOff, Square, PenLine, Dot, Ban, Eraser, Save, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, ZoomIn, Trash2, Square, PenLine, Dot, Ban, Eraser, Save, Loader2 } from 'lucide-react';
 import Draw from 'ol/interaction/Draw';
 import {KML, GeoJSON} from 'ol/format';
 import VectorLayer from 'ol/layer/Vector';
@@ -108,7 +108,7 @@ export default function GeoMapperClient() {
   const { toast } = useToast();
 
   const drawingLayerRef = useRef<VectorLayerType<VectorSourceType<OLFeature<any>>> | null>(null);
-  const drawingSourceRef = useRef<VectorSourceType<OLFeature<any>> | null>(null);
+  const drawingSourceRef = useRef<VectorSourceType<OLFeature<any>>> | null>(null);
   const drawInteractionRef = useRef<Draw | null>(null);
 
   const [activeDrawTool, setActiveDrawTool] = useState<string | null>(null);
@@ -143,7 +143,7 @@ export default function GeoMapperClient() {
         drawingSourceRef.current = new VectorSource({ wrapX: false });
       } else {
         console.error("drawingSourceRef is not a valid ref object in setMapInstance");
-        return; 
+        drawingSourceRef.current = new VectorSource({ wrapX: false }); // Attempt to initialize if not a ref
       }
       
       if (drawingLayerRef && typeof drawingLayerRef === 'object' && 'current' in drawingLayerRef) {
@@ -158,11 +158,29 @@ export default function GeoMapperClient() {
               stroke: new Stroke({ color: '#ffffff', width: 1.5 })
             }),
           }),
-          zIndex: 10 // Ensure drawing layer is on top
+          zIndex: 1000 // Ensure drawing layer is on top
         });
         mapRef.current.addLayer(drawingLayerRef.current);
       } else {
          console.error("drawingLayerRef is not a valid ref object in setMapInstance");
+         // Attempt to initialize if not a ref - though this indicates a deeper issue
+         if (drawingSourceRef.current) {
+            const tempDrawingLayer = new VectorLayer({
+                source: drawingSourceRef.current,
+                 style: new Style({
+                    fill: new Fill({ color: 'rgba(0, 150, 255, 0.2)' }),
+                    stroke: new Stroke({ color: '#007bff', width: 2 }),
+                    image: new CircleStyle({
+                    radius: 7,
+                    fill: new Fill({ color: '#007bff' }),
+                    stroke: new Stroke({ color: '#ffffff', width: 1.5 })
+                    }),
+                }),
+                zIndex: 1000
+            });
+            mapRef.current.addLayer(tempDrawingLayer);
+            drawingLayerRef.current = tempDrawingLayer;
+         }
       }
     }
   }, []);
@@ -172,32 +190,28 @@ export default function GeoMapperClient() {
     if (!mapRef.current) return;
     const currentMap = mapRef.current;
 
+    // Get the base OSM layer
     const baseLayer = currentMap.getLayers().getArray().find(l => l.get('name') === 'OSMBaseLayer');
     
+    // Get all vector layers currently on the map, excluding the drawing layer
     const olMapVectorLayers = currentMap.getLayers().getArray()
-      .filter(l => l.get('name') !== 'OSMBaseLayer' && l !== drawingLayerRef.current) as VectorLayerType<VectorSourceType<OLFeature<any>>>[];
+      .filter(l => l !== baseLayer && l !== drawingLayerRef.current) as VectorLayerType<VectorSourceType<OLFeature<any>>>[];
 
+    // Remove existing vector layers (excluding drawing layer)
     olMapVectorLayers.forEach(olMapLayer => {
         currentMap.removeLayer(olMapLayer);
     });
     
-    if (baseLayer) {
-       currentMap.getLayers().clear(); // Remove all layers
-       currentMap.addLayer(baseLayer); // Re-add base layer first
-       if(drawingLayerRef.current) {
-          currentMap.addLayer(drawingLayerRef.current); // Add drawing layer on top of base
-       }
-    }
-
-
     // Add/update layers from state
     layers.forEach(appLayer => {
       currentMap.addLayer(appLayer.olLayer);
       appLayer.olLayer.setVisible(appLayer.visible);
-      if (drawingLayerRef.current) {
-        drawingLayerRef.current.setZIndex(layers.length + 1); 
-      }
     });
+
+    // Ensure drawing layer is on top of other vector layers if it exists
+    if (drawingLayerRef.current) {
+      drawingLayerRef.current.setZIndex(layers.length + 1); 
+    }
 
   }, [layers, mapRef]);
 
@@ -219,7 +233,7 @@ export default function GeoMapperClient() {
       setSelectedFeatureAttributes(attributesToShow);
       featureFound = true;
       toast({ title: "Feature Selected", description: "Attributes shown in panel." });
-      return true;
+      return true; 
     });
     if (!featureFound) setSelectedFeatureAttributes(null);
   }, [isInspectModeActive, activeDrawTool, toast]);
@@ -334,14 +348,26 @@ export default function GeoMapperClient() {
       if (!extent4326 || extent4326.some(val => !isFinite(val))) {
           throw new Error("Failed to transform drawn area to valid geographic coordinates.");
       }
-      if (extent4326[3] < extent4326[1]) { // North < South (maxY < minY)
+
+      const s_coord = parseFloat(extent4326[1].toFixed(6));
+      const w_coord = parseFloat(extent4326[0].toFixed(6));
+      const n_coord = parseFloat(extent4326[3].toFixed(6));
+      const e_coord = parseFloat(extent4326[2].toFixed(6));
+
+      if (n_coord < s_coord) { 
+          console.error(`Invalid bbox: North (${n_coord}) is South of South (${s_coord}). Original extent4326:`, extent4326);
           throw new Error("Drawn area resulted in an invalid bounding box: North coordinate is south of the South coordinate.");
       }
-      if (extent4326[2] < extent4326[0]) { // East < West (maxX < minX)
+      if (e_coord < w_coord) { 
+          console.error(`Invalid bbox: East (${e_coord}) is West of West (${w_coord}). Original extent4326:`, extent4326);
           throw new Error("Drawn area resulted in an invalid bounding box: East coordinate is west of the West coordinate.");
       }
 
-      const bboxStr = `${extent4326[1]},${extent4326[0]},${extent4326[3]},${extent4326[2]}`; // s,w,n,e
+      console.log("Extent4326 after checks and formatting:", {s: s_coord, w: w_coord, n: n_coord, e: e_coord});
+      
+      const bboxStr = `${s_coord},${w_coord},${n_coord},${e_coord}`; // s,w,n,e
+      console.log("Constructed bboxStr for Overpass API:", bboxStr);
+
 
       let queryParts: string[] = [];
       osmCategoryConfig.forEach(cat => {
@@ -506,9 +532,10 @@ export default function GeoMapperClient() {
           ref={panelRef}
           className="absolute bg-gray-800/60 backdrop-blur-md rounded-lg shadow-xl flex flex-col text-white overflow-hidden z-30"
           style={{
-            width: '350px',
-            top: `${position.y}px`,
-            left: `${position.x}px`,
+             width: '350px',
+             top: `${position.y}px`,
+             left: `${position.x}px`,
+             // transform: `translate(${position.x}px, ${position.y}px)` // Using top/left now
           }}
         >
           <div
@@ -523,7 +550,7 @@ export default function GeoMapperClient() {
           </div>
 
           {!isCollapsed && (
-            <div className="flex-1 min-h-0 overflow-y-auto bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}>
               <MapControls
                   onAddLayer={addLayer}
                   layers={layers}
@@ -549,5 +576,6 @@ export default function GeoMapperClient() {
     </div>
   );
 }
+    
 
     
