@@ -29,6 +29,7 @@ export default function GeoMapperClient() {
 
   const [isInspectModeActive, setIsInspectModeActive] = useState(false);
   const [selectedFeatureAttributes, setSelectedFeatureAttributes] = useState<Record<string, any> | null>(null);
+  
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const [position, setPosition] = useState({ x: 16, y: 16 });
@@ -45,9 +46,7 @@ export default function GeoMapperClient() {
     setLayers(prevLayers =>
       prevLayers.map(layer => {
         if (layer.id === layerId) {
-          const newVisibility = !layer.visible;
-          // Actualización directa en OpenLayers se maneja en el useEffect de [layers]
-          return { ...layer, visible: newVisibility };
+          return { ...layer, visible: !layer.visible };
         }
         return layer;
       })
@@ -62,23 +61,23 @@ export default function GeoMapperClient() {
     if (!mapRef.current) return;
     const currentMap = mapRef.current;
 
-    // Get the base layer (OSM)
     const baseLayer = currentMap.getLayers().item(0);
     if (!baseLayer) {
         console.error("Base map layer not found!");
         return;
     }
     
-    // Temporarily remove all vector layers (all layers except the base layer)
     const olMapVectorLayers = currentMap.getLayers().getArray().slice(1) as VectorLayerType<VectorSourceType<Feature<any>>>[];
     olMapVectorLayers.forEach(olMapLayer => {
       currentMap.removeLayer(olMapLayer);
     });
 
-    // Re-add all layers from the current state, ensuring correct order and visibility
     layers.forEach(appLayer => {
-      currentMap.addLayer(appLayer.olLayer); // Add layer instance
-      appLayer.olLayer.setVisible(appLayer.visible); // Set its visibility
+      const existingOlLayer = currentMap.getLayers().getArray().find(ol => ol === appLayer.olLayer);
+      if (!existingOlLayer) {
+        currentMap.addLayer(appLayer.olLayer);
+      }
+      appLayer.olLayer.setVisible(appLayer.visible);
     });
 
   }, [layers]);
@@ -145,23 +144,21 @@ export default function GeoMapperClient() {
     }
   }, [layers, toast]);
 
-  const toggleCollapse = () => {
-    setIsCollapsed(!isCollapsed);
-  };
+  const toggleCollapse = useCallback(() => {
+    setIsCollapsed(prev => !prev);
+  }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!panelRef.current) return;
     setIsDragging(true);
-    const panelRect = panelRef.current.getBoundingClientRect();
-    // Store initial mouse position and panel's current position
-    // Position state is relative to the parent (mapAreaRef)
     dragStartRef.current = {
       x: e.clientX,
       y: e.clientY,
-      panelX: position.x, // Current position.x from state
-      panelY: position.y, // Current position.y from state
+      panelX: position.x,
+      panelY: position.y,
     };
-    e.preventDefault(); // Prevent text selection during drag
+    console.log("Drag Start:", dragStartRef.current);
+    e.preventDefault();
   }, [position.x, position.y]);
 
   useEffect(() => {
@@ -176,15 +173,27 @@ export default function GeoMapperClient() {
 
       const mapRect = mapAreaRef.current.getBoundingClientRect();
       const panelRect = panelRef.current.getBoundingClientRect();
+
+      if (panelRect.width === 0 || panelRect.height === 0 || mapRect.width === 0 || mapRect.height === 0) {
+        console.warn("Panel or map dimensions are zero during drag. Aborting move.", { panelRect, mapRect });
+        return; 
+      }
       
-      // Constrain within mapAreaRef boundaries
       newX = Math.max(0, Math.min(newX, mapRect.width - panelRect.width));
       newY = Math.max(0, Math.min(newY, mapRect.height - panelRect.height));
 
+      if (isNaN(newX) || isNaN(newY)) {
+        console.error("Calculated NaN position during drag. Aborting move.", { newX, newY, dx, dy, panelX: dragStartRef.current.panelX, panelY: dragStartRef.current.panelY, panelRect, mapRect });
+        return;
+      }
+      // console.log("Dragging:", { newX, newY, panelWidth: panelRect.width, panelHeight: panelRect.height });
       setPosition({ x: newX, y: newY });
     };
 
     const handleMouseUp = () => {
+      if (isDragging) { // Only log if a drag was actually in progress
+        console.log("Drag End");
+      }
       setIsDragging(false);
     };
 
@@ -218,10 +227,8 @@ export default function GeoMapperClient() {
           style={{
             width: '350px',
             transform: `translate(${position.x}px, ${position.y}px)`,
-            // Max height is handled by the inner content div
           }}
         >
-          {/* Title Bar for Collapse/Expand and Drag */}
           <div 
             className="p-2 bg-gray-700/80 flex items-center justify-between cursor-grab rounded-t-lg"
             onMouseDown={handleMouseDown}
@@ -233,9 +240,8 @@ export default function GeoMapperClient() {
             </Button>
           </div>
 
-          {/* Collapsible Content */}
           {!isCollapsed && (
-            <div className="flex-1 min-h-0 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 120px)' /* Adjust as needed, e.g., map header height + panel title bar */ }}>
+            <div className="flex-1 min-h-0 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 120px)' }}>
               <MapControls 
                   onAddLayer={addLayer}
                   layers={layers}
@@ -254,4 +260,4 @@ export default function GeoMapperClient() {
     </div>
   );
 }
-
+    
