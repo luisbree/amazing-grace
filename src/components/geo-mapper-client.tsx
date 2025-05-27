@@ -108,7 +108,7 @@ export default function GeoMapperClient() {
   const { toast } = useToast();
 
   const drawingLayerRef = useRef<VectorLayerType<VectorSourceType<OLFeature<any>>> | null>(null);
-  const drawingSourceRef = useRef<VectorSourceType<OLFeature<any>>> | null>(null);
+  const drawingSourceRef = useRef<VectorSourceType<OLFeature<any>> | null>(null);
   const drawInteractionRef = useRef<Draw | null>(null);
 
   const [activeDrawTool, setActiveDrawTool] = useState<string | null>(null);
@@ -138,50 +138,35 @@ export default function GeoMapperClient() {
 
   const setMapInstance = useCallback((mapInstance: OLMap) => {
     mapRef.current = mapInstance;
-    if (mapRef.current && !drawingLayerRef.current) {
-      if (drawingSourceRef && typeof drawingSourceRef === 'object' && 'current' in drawingSourceRef) {
-        drawingSourceRef.current = new VectorSource({ wrapX: false });
-      } else {
-        console.error("drawingSourceRef is not a valid ref object in setMapInstance");
-        drawingSourceRef.current = new VectorSource({ wrapX: false }); // Attempt to initialize if not a ref
+
+    if (mapRef.current && !drawingLayerRef.current) { // Initialize drawing layer only once
+      // First, verify that our ref objects are indeed ref objects.
+      if (!drawingSourceRef || typeof drawingSourceRef !== 'object' || !('current' in drawingSourceRef)) {
+        console.error("CRITICAL: drawingSourceRef is not a valid React ref object. Drawing layer cannot be initialized.");
+        return; 
       }
-      
-      if (drawingLayerRef && typeof drawingLayerRef === 'object' && 'current' in drawingLayerRef) {
-        drawingLayerRef.current = new VectorLayer({
-          source: drawingSourceRef.current,
-          style: new Style({
-            fill: new Fill({ color: 'rgba(0, 150, 255, 0.2)' }),
-            stroke: new Stroke({ color: '#007bff', width: 2 }),
-            image: new CircleStyle({
-              radius: 7,
-              fill: new Fill({ color: '#007bff' }),
-              stroke: new Stroke({ color: '#ffffff', width: 1.5 })
-            }),
+      if (!drawingLayerRef || typeof drawingLayerRef !== 'object' || !('current' in drawingLayerRef)) {
+        console.error("CRITICAL: drawingLayerRef is not a valid React ref object. Drawing layer cannot be initialized.");
+        return; 
+      }
+
+      // At this point, drawingSourceRef and drawingLayerRef are known to be valid ref objects.
+      drawingSourceRef.current = new VectorSource({ wrapX: false });
+      drawingLayerRef.current = new VectorLayer({
+        source: drawingSourceRef.current,
+        style: new Style({
+          fill: new Fill({ color: 'rgba(0, 150, 255, 0.2)' }),
+          stroke: new Stroke({ color: '#007bff', width: 2 }),
+          image: new CircleStyle({
+            radius: 7,
+            fill: new Fill({ color: '#007bff' }),
+            stroke: new Stroke({ color: '#ffffff', width: 1.5 })
           }),
-          zIndex: 1000 // Ensure drawing layer is on top
-        });
-        mapRef.current.addLayer(drawingLayerRef.current);
-      } else {
-         console.error("drawingLayerRef is not a valid ref object in setMapInstance");
-         // Attempt to initialize if not a ref - though this indicates a deeper issue
-         if (drawingSourceRef.current) {
-            const tempDrawingLayer = new VectorLayer({
-                source: drawingSourceRef.current,
-                 style: new Style({
-                    fill: new Fill({ color: 'rgba(0, 150, 255, 0.2)' }),
-                    stroke: new Stroke({ color: '#007bff', width: 2 }),
-                    image: new CircleStyle({
-                    radius: 7,
-                    fill: new Fill({ color: '#007bff' }),
-                    stroke: new Stroke({ color: '#ffffff', width: 1.5 })
-                    }),
-                }),
-                zIndex: 1000
-            });
-            mapRef.current.addLayer(tempDrawingLayer);
-            drawingLayerRef.current = tempDrawingLayer;
-         }
-      }
+        }),
+        zIndex: 1000 // Ensure drawing layer is on top
+      });
+      
+      mapRef.current.addLayer(drawingLayerRef.current);
     }
   }, []);
 
@@ -346,6 +331,7 @@ export default function GeoMapperClient() {
       const extent4326 = transformExtent(extent3857, 'EPSG:3857', 'EPSG:4326');
       
       if (!extent4326 || extent4326.some(val => !isFinite(val))) {
+          console.error("Failed to transform drawn area to valid geographic coordinates. Extent4326:", extent4326);
           throw new Error("Failed to transform drawn area to valid geographic coordinates.");
       }
 
@@ -355,14 +341,14 @@ export default function GeoMapperClient() {
       const e_coord = parseFloat(extent4326[2].toFixed(6));
 
       if (n_coord < s_coord) { 
-          console.error(`Invalid bbox: North (${n_coord}) is South of South (${s_coord}). Original extent4326:`, extent4326);
+          console.error(`Invalid bbox: North (${n_coord}) is South of South (${s_coord}). Original extent4326:`, extent4326, "Drawn feature extent3857:", extent3857);
           throw new Error("Drawn area resulted in an invalid bounding box: North coordinate is south of the South coordinate.");
       }
       if (e_coord < w_coord) { 
-          console.error(`Invalid bbox: East (${e_coord}) is West of West (${w_coord}). Original extent4326:`, extent4326);
+          console.error(`Invalid bbox: East (${e_coord}) is West of West (${w_coord}). Original extent4326:`, extent4326, "Drawn feature extent3857:", extent3857);
           throw new Error("Drawn area resulted in an invalid bounding box: East coordinate is west of the West coordinate.");
       }
-
+      
       console.log("Extent4326 after checks and formatting:", {s: s_coord, w: w_coord, n: n_coord, e: e_coord});
       
       const bboxStr = `${s_coord},${w_coord},${n_coord},${e_coord}`; // s,w,n,e
@@ -535,7 +521,6 @@ export default function GeoMapperClient() {
              width: '350px',
              top: `${position.y}px`,
              left: `${position.x}px`,
-             // transform: `translate(${position.x}px, ${position.y}px)` // Using top/left now
           }}
         >
           <div
