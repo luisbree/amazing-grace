@@ -113,6 +113,22 @@ const MapControls: React.FC<MapControlsProps> = ({
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const uniqueIdPrefix = useId();
 
+  const [openAccordionItems, setOpenAccordionItems] = React.useState<string[]>([]);
+  const prevLayersLengthRef = React.useRef(layers.length);
+
+  React.useEffect(() => {
+    if (prevLayersLengthRef.current === 0 && layers.length > 0) {
+      // First layer just added
+      setOpenAccordionItems(prevOpenItems => {
+        if (!prevOpenItems.includes('layers-section')) {
+          return [...prevOpenItems, 'layers-section'];
+        }
+        return prevOpenItems;
+      });
+    }
+    prevLayersLengthRef.current = layers.length;
+  }, [layers.length]);
+
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
@@ -197,8 +213,7 @@ const MapControls: React.FC<MapControlsProps> = ({
           const zip = await JSZip.loadAsync(await selectedFile.arrayBuffer());
           let kmlFileEntry: JSZip.JSZipObject | null = null;
           let kmlFileNameInZip = fileBaseName;
-
-          // Try to find doc.kml first, then any other .kml file
+          
           kmlFileEntry = zip.file(/^doc\.kml$/i)?.[0] || zip.file(/\.kml$/i)?.[0] || null;
           
           if (kmlFileEntry) {
@@ -210,7 +225,7 @@ const MapControls: React.FC<MapControlsProps> = ({
             throw new Error(`Archivo KMZ/ZIP ${fileName} no contiene un archivo KML válido.`);
           }
 
-        } else if (fileExtension === 'zip') { // Handles generic ZIP for Shapefiles
+        } else if (fileExtension === 'zip') { 
           const zip = await JSZip.loadAsync(await selectedFile.arrayBuffer());
           let shpFile: JSZip.JSZipObject | null = null;
           let dbfFile: JSZip.JSZipObject | null = null;
@@ -232,7 +247,6 @@ const MapControls: React.FC<MapControlsProps> = ({
             features = new GeoJSONFormat().readFeatures(geojson, commonFormatOptions);
             toast({ title: "Capa Añadida", description: `${shpFileNameInZip} (Shapefile de ZIP) añadido exitosamente.` });
           } else {
-             // If not a Shapefile, check if it's a KMZ disguised as ZIP
             let kmlFileEntry: JSZip.JSZipObject | null = null;
             kmlFileEntry = zip.file(/^doc\.kml$/i)?.[0] || zip.file(/\.kml$/i)?.[0] || null;
             if (kmlFileEntry) {
@@ -261,10 +275,9 @@ const MapControls: React.FC<MapControlsProps> = ({
           const vectorLayer = new VectorLayer({ source: vectorSource });
           const newLayerId = `${uniqueFileId}-${fileBaseName}`;
           onAddLayer({ id: newLayerId, name: fileBaseName, olLayer: vectorLayer, visible: true });
-        } else if (features) { // features is defined but empty
+        } else if (features) { 
            toast({ title: "Capa Vacía", description: `No se encontraron entidades en ${fileName}.`, variant: "destructive" });
         }
-         // If features is undefined, an error was already thrown or a specific toast shown.
       }
     } catch (parseError: any) {
       console.error("Error procesando archivo:", parseError);
@@ -325,7 +338,12 @@ const MapControls: React.FC<MapControlsProps> = ({
           </div>
         )}
 
-        <Accordion type="multiple" defaultValue={[]} className="w-full space-y-1">
+        <Accordion 
+          type="multiple" 
+          value={openAccordionItems}
+          onValueChange={setOpenAccordionItems}
+          className="w-full space-y-1"
+        >
           {renderConfig.layers && (
             <AccordionItem value="layers-section" className="border-b-0 bg-white/5 rounded-md">
               <AccordionTrigger className="p-3 hover:no-underline hover:bg-white/10 rounded-t-md data-[state=open]:rounded-b-none">
