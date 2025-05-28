@@ -127,7 +127,6 @@ const MapControls: React.FC<MapControlsProps> = ({
 
   const handleFileUpload = useCallback(async () => {
     if (!selectedFile && !selectedMultipleFiles) {
-      // This case should ideally not be hit if called from useEffect correctly
       return;
     }
     setIsLoading(true);
@@ -261,9 +260,9 @@ const MapControls: React.FC<MapControlsProps> = ({
 
   return (
     <ScrollArea className="h-full bg-transparent text-white">
-      <Accordion type="multiple" defaultValue={['upload-section', 'layers-section']} className="w-full p-2 space-y-1">
+      <Accordion type="multiple" defaultValue={[]} className="w-full p-2 space-y-1">
         
-        <AccordionItem value="upload-section" className="border-b-0 bg-white/5 rounded-md">
+        <AccordionItem value="import-section" className="border-b-0 bg-white/5 rounded-md">
           <AccordionTrigger className="p-3 hover:no-underline hover:bg-white/10 rounded-t-md data-[state=open]:rounded-b-none">
             <SectionHeader 
               title="Importar" 
@@ -542,3 +541,6 @@ const MapControls: React.FC<MapControlsProps> = ({
 };
 
 export default MapControls;
+
+
+    
