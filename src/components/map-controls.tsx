@@ -111,6 +111,8 @@ const MapControls: React.FC<MapControlsProps> = ({
   const [isLoading, setIsLoading] = React.useState(false);
   const { toast } = useToast();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const uniqueIdPrefix = useId();
+
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
@@ -138,7 +140,7 @@ const MapControls: React.FC<MapControlsProps> = ({
       return;
     }
     setIsLoading(true);
-    const uniqueFileId = `file-${Date.now()}`; // To create unique layer IDs
+    const uniqueFileId = `${uniqueIdPrefix}-${Date.now()}`;
 
     try {
       if (selectedMultipleFiles && selectedMultipleFiles.length > 0) {
@@ -187,9 +189,28 @@ const MapControls: React.FC<MapControlsProps> = ({
         const { default: KMLFormat } = await import('ol/format/KML');
         const { default: VectorSource } = await import('ol/source/Vector');
         const { default: VectorLayer } = await import('ol/layer/Vector');
+        let features: Feature[] | undefined;
+        const commonFormatOptions = { dataProjection: 'EPSG:4326', featureProjection: 'EPSG:3857' };
 
 
-        if (fileExtension === 'zip') {
+        if (fileExtension === 'kmz' || (fileExtension === 'zip' && fileName.toLowerCase().endsWith('.kmz'))) {
+          const zip = await JSZip.loadAsync(await selectedFile.arrayBuffer());
+          let kmlFileEntry: JSZip.JSZipObject | null = null;
+          let kmlFileNameInZip = fileBaseName;
+
+          // Try to find doc.kml first, then any other .kml file
+          kmlFileEntry = zip.file(/^doc\.kml$/i)?.[0] || zip.file(/\.kml$/i)?.[0] || null;
+          
+          if (kmlFileEntry) {
+            kmlFileNameInZip = kmlFileEntry.name.substring(0, kmlFileEntry.name.lastIndexOf('.'));
+            const kmlContent = await kmlFileEntry.async('text');
+            features = new KMLFormat().readFeatures(kmlContent, commonFormatOptions);
+             toast({ title: "Capa Añadida", description: `${kmlFileNameInZip} (de KMZ) añadido exitosamente.` });
+          } else {
+            throw new Error(`Archivo KMZ/ZIP ${fileName} no contiene un archivo KML válido.`);
+          }
+
+        } else if (fileExtension === 'zip') { // Handles generic ZIP for Shapefiles
           const zip = await JSZip.loadAsync(await selectedFile.arrayBuffer());
           let shpFile: JSZip.JSZipObject | null = null;
           let dbfFile: JSZip.JSZipObject | null = null;
@@ -208,45 +229,42 @@ const MapControls: React.FC<MapControlsProps> = ({
             const shpBuffer = await shpFile.async('arraybuffer');
             const dbfBuffer = await dbfFile.async('arraybuffer');
             const geojson = shpjs.combine([shpjs.parseShp(shpBuffer), shpjs.parseDbf(dbfBuffer)]);
-            const features = new GeoJSONFormat().readFeatures(geojson, {
-              dataProjection: 'EPSG:4326',
-              featureProjection: 'EPSG:3857',
-            });
-            if (features && features.length > 0) {
-              const vectorSource = new VectorSource({ features });
-              const vectorLayer = new VectorLayer({ source: vectorSource });
-              const newLayerId = `${uniqueFileId}-${shpFileNameInZip}`;
-              onAddLayer({ id: newLayerId, name: shpFileNameInZip, olLayer: vectorLayer, visible: true });
-              toast({ title: "Capa Añadida", description: `${shpFileNameInZip} (Shapefile de ZIP) añadido exitosamente.` });
+            features = new GeoJSONFormat().readFeatures(geojson, commonFormatOptions);
+            toast({ title: "Capa Añadida", description: `${shpFileNameInZip} (Shapefile de ZIP) añadido exitosamente.` });
+          } else {
+             // If not a Shapefile, check if it's a KMZ disguised as ZIP
+            let kmlFileEntry: JSZip.JSZipObject | null = null;
+            kmlFileEntry = zip.file(/^doc\.kml$/i)?.[0] || zip.file(/\.kml$/i)?.[0] || null;
+            if (kmlFileEntry) {
+              const kmlFileNameInZip = kmlFileEntry.name.substring(0, kmlFileEntry.name.lastIndexOf('.'));
+              const kmlContent = await kmlFileEntry.async('text');
+              features = new KMLFormat().readFeatures(kmlContent, commonFormatOptions);
+              toast({ title: "Capa Añadida", description: `${kmlFileNameInZip} (de ZIP conteniendo KML) añadido exitosamente.` });
             } else {
-              throw new Error(`No se encontraron entidades en el Shapefile dentro de ${fileName}.`);
+              throw new Error(`Archivo ZIP ${fileName} no contiene un Shapefile válido (archivos .shp y .dbf) ni un archivo KML.`);
             }
-          } else {
-            throw new Error(`Archivo ZIP ${fileName} no contiene los archivos .shp y .dbf requeridos.`);
           }
-        } else {
+        } else if (fileExtension === 'kml') {
           const fileContent = await selectedFile.text();
-          let features: Feature[] | undefined;
-          const commonFormatOptions = { dataProjection: 'EPSG:4326', featureProjection: 'EPSG:3857' };
-
-          if (fileExtension === 'kml') {
-            features = new KMLFormat().readFeatures(fileContent, commonFormatOptions);
-          } else if (fileExtension === 'geojson' || fileExtension === 'json') {
-            features = new GeoJSONFormat().readFeatures(fileContent, commonFormatOptions);
-          } else {
-            throw new Error(`Tipo de archivo no soportado: .${fileExtension}. Por favor, cargue KML, GeoJSON, o un ZIP conteniendo un Shapefile.`);
-          }
-
-          if (features && features.length > 0) {
-            const vectorSource = new VectorSource({ features });
-            const vectorLayer = new VectorLayer({ source: vectorSource });
-            const newLayerId = `${uniqueFileId}-${fileBaseName}`;
-            onAddLayer({ id: newLayerId, name: fileBaseName, olLayer: vectorLayer, visible: true });
-            toast({ title: "Capa Añadida", description: `${fileBaseName} añadido exitosamente al mapa.` });
-          } else {
-            throw new Error(`No se encontraron entidades en ${fileName} o el archivo está vacío.`);
-          }
+          features = new KMLFormat().readFeatures(fileContent, commonFormatOptions);
+          toast({ title: "Capa Añadida", description: `${fileBaseName} añadido exitosamente al mapa.` });
+        } else if (fileExtension === 'geojson' || fileExtension === 'json') {
+          const fileContent = await selectedFile.text();
+          features = new GeoJSONFormat().readFeatures(fileContent, commonFormatOptions);
+          toast({ title: "Capa Añadida", description: `${fileBaseName} añadido exitosamente al mapa.` });
+        } else {
+          throw new Error(`Tipo de archivo no soportado: .${fileExtension}. Por favor, cargue KML, KMZ, GeoJSON, o un ZIP conteniendo un Shapefile.`);
         }
+
+        if (features && features.length > 0) {
+          const vectorSource = new VectorSource({ features });
+          const vectorLayer = new VectorLayer({ source: vectorSource });
+          const newLayerId = `${uniqueFileId}-${fileBaseName}`;
+          onAddLayer({ id: newLayerId, name: fileBaseName, olLayer: vectorLayer, visible: true });
+        } else if (features) { // features is defined but empty
+           toast({ title: "Capa Vacía", description: `No se encontraron entidades en ${fileName}.`, variant: "destructive" });
+        }
+         // If features is undefined, an error was already thrown or a specific toast shown.
       }
     } catch (parseError: any) {
       console.error("Error procesando archivo:", parseError);
@@ -255,14 +273,14 @@ const MapControls: React.FC<MapControlsProps> = ({
       setIsLoading(false);
       resetFileInput();
     }
-  }, [selectedFile, selectedMultipleFiles, onAddLayer, toast, setIsLoading, resetFileInput]);
+  }, [selectedFile, selectedMultipleFiles, onAddLayer, toast, setIsLoading, resetFileInput, uniqueIdPrefix]);
 
   React.useEffect(() => {
     if (selectedFile || selectedMultipleFiles) {
       handleFileUpload();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedFile, selectedMultipleFiles]); // handleFileUpload is stable due to useCallback
+  }, [selectedFile, selectedMultipleFiles]);
 
 
   const getButtonVariant = (toolName: string) => {
@@ -282,12 +300,12 @@ const MapControls: React.FC<MapControlsProps> = ({
         {renderConfig.layers && (
           <div className="mb-2">
             <Input
-              id="file-upload-input-layers"
+              id={`${uniqueIdPrefix}-file-upload-input-layers`}
               ref={fileInputRef}
               type="file"
               multiple
               onChange={handleFileChange}
-              accept=".kml,.geojson,.json,.zip,.shp,.dbf"
+              accept=".kml,.kmz,.geojson,.json,.zip,.shp,.dbf"
               className="hidden"
               disabled={isLoading}
             />
@@ -302,7 +320,7 @@ const MapControls: React.FC<MapControlsProps> = ({
               ) : (
                 <Plus className="mr-2 h-4 w-4" />
               )}
-              {isLoading ? 'Procesando...' : 'Importar Capa'}
+              {isLoading ? 'Procesando...' : 'Importar'}
             </Button>
           </div>
         )}
@@ -322,7 +340,7 @@ const MapControls: React.FC<MapControlsProps> = ({
                   <div className="text-center py-6 px-3">
                     <Layers className="mx-auto h-10 w-10 text-gray-400/40" />
                     <p className="mt-1.5 text-xs text-gray-300/90">No hay capas cargadas.</p>
-                    <p className="text-xs text-gray-400/70">Use el botón "+" para importar.</p>
+                    <p className="text-xs text-gray-400/70">Use el botón \"Importar\" para añadir.</p>
                   </div>
                 ) : (
                   <ScrollArea className="max-h-48 p-2"> 
@@ -502,7 +520,7 @@ const MapControls: React.FC<MapControlsProps> = ({
                 <Button 
                   onClick={onFetchOSMDataTrigger} 
                   className="w-full bg-primary/70 hover:bg-primary/90 text-primary-foreground text-xs h-8"
-                  disabled={isFetchingOSM}
+                  disabled={isFetchingOSM || !!activeDrawTool}
                 >
                   {isFetchingOSM ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <MapPin className="mr-2 h-3 w-3" />}
                   {isFetchingOSM ? 'Obteniendo Datos...' : 'Obtener Datos OSM (del último polígono)'}
@@ -512,12 +530,14 @@ const MapControls: React.FC<MapControlsProps> = ({
                   onClick={onClearDrawnFeatures} 
                   variant="outline" 
                   className="w-full text-xs h-8 border-white/30 hover:bg-red-500/20 hover:text-red-300 text-white/90"
+                  disabled={!!activeDrawTool}
                 >
                   <Eraser className="mr-2 h-3 w-3" /> Limpiar Dibujos
                 </Button>
                 <Button 
                   onClick={onSaveDrawnFeaturesAsKML} 
                   className="w-full bg-primary hover:bg-primary/90 text-primary-foreground text-xs h-8 mt-2"
+                  disabled={!!activeDrawTool}
                 >
                   <Save className="mr-2 h-3 w-3" /> Guardar Dibujos (KML)
                 </Button>
