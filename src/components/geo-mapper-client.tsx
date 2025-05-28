@@ -91,6 +91,9 @@ const osmCategoryConfig: OSMCategoryConfig[] = [
 
 const osmCategoriesForSelection = osmCategoryConfig.map(({ id, name }) => ({ id, name }));
 
+const PANEL_WIDTH = 350; // px
+const PANEL_PADDING = 16; // px
+
 function triggerDownload(content: string, fileName: string, contentType: string) {
   const blob = new Blob([content], { type: contentType });
   const link = document.createElement('a');
@@ -117,15 +120,23 @@ export default function GeoMapperClient() {
   const [layers, setLayers] = useState<MapLayer[]>([]);
   const mapRef = useRef<OLMap | null>(null);
   const mapAreaRef = useRef<HTMLDivElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  
+  // State for Tools Panel (right)
+  const toolsPanelRef = useRef<HTMLDivElement>(null);
+  const [isToolsPanelCollapsed, setIsToolsPanelCollapsed] = useState(false);
+  const [toolsPanelPosition, setToolsPanelPosition] = useState({ x: PANEL_PADDING, y: PANEL_PADDING });
+  const [isToolsPanelDragging, setIsToolsPanelDragging] = useState(false);
+  const toolsPanelDragStartRef = useRef({ x: 0, y: 0, panelX: 0, panelY: 0 });
+
+  // State for Layers Panel (left)
+  const layersPanelRef = useRef<HTMLDivElement>(null);
+  const [isLayersPanelCollapsed, setIsLayersPanelCollapsed] = useState(false);
+  const [layersPanelPosition, setLayersPanelPosition] = useState({ x: PANEL_PADDING, y: PANEL_PADDING });
+  const [isLayersPanelDragging, setIsLayersPanelDragging] = useState(false);
+  const layersPanelDragStartRef = useRef({ x: 0, y: 0, panelX: 0, panelY: 0 });
 
   const [isInspectModeActive, setIsInspectModeActive] = useState(false);
   const [selectedFeatureAttributes, setSelectedFeatureAttributes] = useState<Record<string, any> | null>(null);
-
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [position, setPosition] = useState({ x: 16, y: 16 });
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef({ x: 0, y: 0, panelX: 0, panelY: 0 });
 
   const { toast } = useToast();
 
@@ -144,6 +155,17 @@ export default function GeoMapperClient() {
 
   const [downloadFormat, setDownloadFormat] = useState<string>('geojson');
   const [isDownloading, setIsDownloading] = useState(false);
+
+  // Effect to set initial position of the tools panel to the right
+  useEffect(() => {
+    if (mapAreaRef.current) {
+      const mapRect = mapAreaRef.current.getBoundingClientRect();
+      setToolsPanelPosition({
+        x: mapRect.width - PANEL_WIDTH - PANEL_PADDING,
+        y: PANEL_PADDING,
+      });
+    }
+  }, []); // Runs once after initial render
 
   const addLayer = useCallback((newLayer: MapLayer) => {
     setLayers(prevLayers => [...prevLayers, newLayer]);
@@ -287,48 +309,70 @@ export default function GeoMapperClient() {
     }
   }, [layers, toast]);
 
-  const toggleCollapse = useCallback(() => setIsCollapsed(prev => !prev), []);
+  const toggleToolsPanelCollapse = useCallback(() => setIsToolsPanelCollapsed(prev => !prev), []);
+  const toggleLayersPanelCollapse = useCallback(() => setIsLayersPanelCollapsed(prev => !prev), []);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!panelRef.current) return;
-    setIsDragging(true);
-    dragStartRef.current = {
+  const handleToolsPanelMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!toolsPanelRef.current) return;
+    setIsToolsPanelDragging(true);
+    toolsPanelDragStartRef.current = {
       x: e.clientX,
       y: e.clientY,
-      panelX: position.x,
-      panelY: position.y,
+      panelX: toolsPanelPosition.x,
+      panelY: toolsPanelPosition.y,
     };
     e.preventDefault();
-  }, [position.x, position.y]);
+  }, [toolsPanelPosition.x, toolsPanelPosition.y]);
+  
+  const handleLayersPanelMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!layersPanelRef.current) return;
+    setIsLayersPanelDragging(true);
+    layersPanelDragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      panelX: layersPanelPosition.x,
+      panelY: layersPanelPosition.y,
+    };
+    e.preventDefault();
+  }, [layersPanelPosition.x, layersPanelPosition.y]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging || !mapAreaRef.current || !panelRef.current) return;
-      const dx = e.clientX - dragStartRef.current.x;
-      const dy = e.clientY - dragStartRef.current.y;
-      let newX = dragStartRef.current.panelX + dx;
-      let newY = dragStartRef.current.panelY + dy;
-
+      if (!mapAreaRef.current) return;
       const mapRect = mapAreaRef.current.getBoundingClientRect();
-      const panelRect = panelRef.current.getBoundingClientRect();
 
-      if (panelRect.width === 0 || panelRect.height === 0 || mapRect.width === 0 || mapRect.height === 0) {
-        // console.warn("Skipping drag: panel or map rect has zero dimension.", {panelRect, mapRect});
-        return;
+      if (isToolsPanelDragging && toolsPanelRef.current) {
+        const dx = e.clientX - toolsPanelDragStartRef.current.x;
+        const dy = e.clientY - toolsPanelDragStartRef.current.y;
+        let newX = toolsPanelDragStartRef.current.panelX + dx;
+        let newY = toolsPanelDragStartRef.current.panelY + dy;
+        const panelRect = toolsPanelRef.current.getBoundingClientRect();
+        if (panelRect.width > 0 && panelRect.height > 0 && mapRect.width > 0 && mapRect.height > 0) {
+            newX = Math.max(0, Math.min(newX, mapRect.width - panelRect.width));
+            newY = Math.max(0, Math.min(newY, mapRect.height - panelRect.height));
+            if (!isNaN(newX) && !isNaN(newY)) setToolsPanelPosition({ x: newX, y: newY });
+        }
       }
 
-      newX = Math.max(0, Math.min(newX, mapRect.width - panelRect.width));
-      newY = Math.max(0, Math.min(newY, mapRect.height - panelRect.height));
-
-      if (isNaN(newX) || isNaN(newY)) {
-        // console.error("Skipping drag: newX or newY is NaN.", {newX, newY, dx, dy, dragStartRefCurrent: dragStartRef.current, clientX: e.clientX, clientY: e.clientY });
-        return;
+      if (isLayersPanelDragging && layersPanelRef.current) {
+        const dx = e.clientX - layersPanelDragStartRef.current.x;
+        const dy = e.clientY - layersPanelDragStartRef.current.y;
+        let newX = layersPanelDragStartRef.current.panelX + dx;
+        let newY = layersPanelDragStartRef.current.panelY + dy;
+        const panelRect = layersPanelRef.current.getBoundingClientRect();
+         if (panelRect.width > 0 && panelRect.height > 0 && mapRect.width > 0 && mapRect.height > 0) {
+            newX = Math.max(0, Math.min(newX, mapRect.width - panelRect.width));
+            newY = Math.max(0, Math.min(newY, mapRect.height - panelRect.height));
+            if (!isNaN(newX) && !isNaN(newY)) setLayersPanelPosition({ x: newX, y: newY });
+        }
       }
-      setPosition({ x: newX, y: newY });
     };
-    const handleMouseUp = () => setIsDragging(false);
+    const handleMouseUp = () => {
+        setIsToolsPanelDragging(false);
+        setIsLayersPanelDragging(false);
+    };
 
-    if (isDragging) {
+    if (isToolsPanelDragging || isLayersPanelDragging) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     } else {
@@ -339,36 +383,44 @@ export default function GeoMapperClient() {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging]);
+  }, [isToolsPanelDragging, isLayersPanelDragging]);
 
   const fetchOSMData = useCallback(async () => {
-    const drawnFeatures = drawingSourceRef.current?.getFeatures();
-    if (!drawingSourceRef.current || !drawnFeatures || drawnFeatures.length === 0) {
-      toast({ title: "Sin Dibujos", description: "Por favor, dibuje un polígono en el mapa primero.", variant: "destructive" });
-      return;
+    if (!drawingSourceRef.current) {
+        toast({ title: "Error de Dibujo", description: "La capa de dibujo no está inicializada.", variant: "destructive" });
+        return;
+    }
+    const drawnFeatures = drawingSourceRef.current.getFeatures();
+    if (drawnFeatures.length === 0) {
+        toast({ title: "Sin Dibujos", description: "Por favor, dibuje una entidad en el mapa primero.", variant: "destructive" });
+        return;
     }
     const lastDrawnFeature = drawnFeatures[drawnFeatures.length - 1];
 
     if (selectedOSMCategoryIdsRef.current.length === 0) {
-      toast({ title: "Sin Categorías Seleccionadas", description: "Por favor, seleccione al menos una categoría OSM para descargar.", variant: "destructive" });
-      return;
+        toast({ title: "Sin Categorías Seleccionadas", description: "Por favor, seleccione al menos una categoría OSM para descargar.", variant: "destructive" });
+        return;
+    }
+    
+    const geometry = lastDrawnFeature.getGeometry();
+    if (!geometry || geometry.getType() !== 'Polygon') {
+        toast({ title: "Geometría Inválida", description: "La descarga de datos OSM requiere un polígono dibujado. Por favor, dibuje un polígono.", variant: "destructive"});
+        return;
     }
     
     setIsFetchingOSM(true);
     toast({ title: "Obteniendo Datos OSM", description: "Descargando datos de OpenStreetMap..." });
 
     try {
-      const geometry = lastDrawnFeature.getGeometry();
-      if (!geometry || geometry.getType() !== 'Polygon') {
-        throw new Error("Geometría Inválida: Por favor, asegúrese de que el último dibujo sea un polígono para obtener datos OSM del área.");
-      }
-      
       const extent3857 = geometry.getExtent();
+      console.log("Extent3857 (Source):", extent3857);
+
       if (!extent3857 || extent3857.some(val => !isFinite(val)) || (extent3857[2] - extent3857[0] <= 0 && extent3857[2] !== extent3857[0]) || (extent3857[3] - extent3857[1] <= 0 && extent3857[3] !== extent3857[1])) {
-          throw new Error("Área dibujada tiene una extensión inválida (inválida o puntos/líneas).");
+          throw new Error(`Área dibujada tiene una extensión inválida (inválida o puntos/líneas). Extent: ${extent3857.join(', ')}`);
       }
 
       const extent4326_transformed = transformExtent(extent3857, 'EPSG:3857', 'EPSG:4326');
+      console.log("Extent4326 (Transformed, raw):", extent4326_transformed);
       
       if (!extent4326_transformed || extent4326_transformed.some(val => !isFinite(val))) {
           throw new Error("Fallo al transformar área dibujada a coordenadas geográficas válidas.");
@@ -378,15 +430,18 @@ export default function GeoMapperClient() {
       const w_coord = parseFloat(extent4326_transformed[0].toFixed(6));
       const n_coord = parseFloat(extent4326_transformed[3].toFixed(6));
       const e_coord = parseFloat(extent4326_transformed[2].toFixed(6));
+      console.log("Coordinates for Overpass (s,w,n,e - after toFixed(6)):", s_coord, w_coord, n_coord, e_coord);
+
 
       if (n_coord < s_coord) { 
-          throw new Error(`Error de Bounding Box (N < S): Norte ${n_coord} es menor que Sur ${s_coord}.`);
+          throw new Error(`Error de Bounding Box (N < S): Norte ${n_coord} es menor que Sur ${s_coord}. BBox original: ${extent4326_transformed.join(', ')}`);
       }
-      if (e_coord < w_coord && Math.abs(e_coord - w_coord) < 180) { 
-          throw new Error(`Error de Bounding Box (E < W): Este ${e_coord} es menor que Oeste ${w_coord}.`);
+      if (e_coord < w_coord && Math.abs(e_coord - w_coord) < 180) { // Check for anti-meridian crossing is simplified
+          throw new Error(`Error de Bounding Box (E < W): Este ${e_coord} es menor que Oeste ${w_coord} (sin cruzar anti-meridiano). BBox original: ${extent4326_transformed.join(', ')}`);
       }
             
       const bboxStr = `${s_coord},${w_coord},${n_coord},${e_coord}`;
+      console.log("Constructed bboxStr for Overpass API:", bboxStr);
       
       let queryParts: string[] = [];
       const categoriesToFetch = osmCategoryConfig.filter(cat => selectedOSMCategoryIdsRef.current.includes(cat.id));
@@ -402,6 +457,7 @@ export default function GeoMapperClient() {
         );
         out geom;
       `;
+      console.log("Overpass Query:", overpassQuery);
       
       const response = await fetch('https://overpass-api.de/api/interpreter', {
         method: 'POST',
@@ -455,7 +511,6 @@ export default function GeoMapperClient() {
       toast({ title: "Error Obteniendo Datos OSM", description: error.message || "Ocurrió un error desconocido.", variant: "destructive" });
     } finally {
       setIsFetchingOSM(false);
-      // No remover el lastDrawnFeature aquí, permitir que los dibujos persistan.
     }
   }, [toast, addLayer]);
 
@@ -477,11 +532,6 @@ export default function GeoMapperClient() {
         source: drawingSourceRef.current,
         type: toolType,
       });
-
-      // No llamar a fetchOSMData en drawend
-      // newDrawInteraction.on('drawend', (event) => {
-      // });
-
       mapRef.current.addInteraction(newDrawInteraction);
       drawInteractionRef.current = newDrawInteraction;
       setActiveDrawTool(toolType);
@@ -631,6 +681,14 @@ export default function GeoMapperClient() {
     }
   }, [layers, downloadFormat, toast]);
 
+  const layersPanelRenderConfig = { layers: true };
+  const toolsPanelRenderConfig = { 
+    import: true, 
+    inspector: true, 
+    osmCategories: true, 
+    drawing: true, 
+    download: true 
+  };
 
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
@@ -641,38 +699,43 @@ export default function GeoMapperClient() {
       <div ref={mapAreaRef} className="relative flex-1 overflow-hidden">
         <MapView mapRef={mapRef} setMapInstance={setMapInstance} />
 
+        {/* Layers Panel (Left) */}
         <div
-          ref={panelRef}
+          ref={layersPanelRef}
           className="absolute bg-gray-800/60 backdrop-blur-md rounded-lg shadow-xl flex flex-col text-white overflow-hidden z-30"
           style={{
-             width: '350px',
-             top: `${position.y}px`,
-             left: `${position.x}px`,
+             width: `${PANEL_WIDTH}px`,
+             top: `${layersPanelPosition.y}px`,
+             left: `${layersPanelPosition.x}px`,
           }}
         >
           <div
             className="p-2 bg-gray-700/80 flex items-center justify-between cursor-grab rounded-t-lg"
-            onMouseDown={handleMouseDown}
+            onMouseDown={handleLayersPanelMouseDown}
           >
-            <h2 className="text-sm font-semibold">Herramientas del Mapa</h2>
-            <Button variant="ghost" size="icon" onClick={toggleCollapse} className="h-6 w-6 text-white hover:bg-gray-600/80">
-              {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-              <span className="sr-only">{isCollapsed ? 'Expandir' : 'Colapsar'}</span>
+            <h2 className="text-sm font-semibold">Administrar Capas</h2>
+            <Button variant="ghost" size="icon" onClick={toggleLayersPanelCollapse} className="h-6 w-6 text-white hover:bg-gray-600/80">
+              {isLayersPanelCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+              <span className="sr-only">{isLayersPanelCollapsed ? 'Expandir' : 'Colapsar'}</span>
             </Button>
           </div>
 
-          {!isCollapsed && (
+          {!isLayersPanelCollapsed && (
             <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}>
               <MapControls
-                  onAddLayer={addLayer}
+                  renderConfig={layersPanelRenderConfig}
                   layers={layers}
                   onToggleLayerVisibility={toggleLayerVisibility}
                   onRemoveLayer={removeLayer}
+                  onZoomToLayerExtent={zoomToLayerExtent}
+                  // Pass other necessary props that are only for layer management, if any.
+                  // The rest can be conditionally excluded or passed as undefined if MapControls handles it.
+                  // For now, pass all, MapControls will ignore what it doesn't need for this mode.
+                  onAddLayer={addLayer}
                   isInspectModeActive={isInspectModeActive}
                   onToggleInspectMode={() => setIsInspectModeActive(!isInspectModeActive)}
                   selectedFeatureAttributes={selectedFeatureAttributes}
                   onClearSelectedFeature={clearSelectedFeature}
-                  onZoomToLayerExtent={zoomToLayerExtent}
                   activeDrawTool={activeDrawTool}
                   onToggleDrawingTool={toggleDrawingTool}
                   onStopDrawingTool={stopDrawingTool}
@@ -691,8 +754,65 @@ export default function GeoMapperClient() {
             </div>
           )}
         </div>
+        
+        {/* Tools Panel (Right) */}
+        <div
+          ref={toolsPanelRef}
+          className="absolute bg-gray-800/60 backdrop-blur-md rounded-lg shadow-xl flex flex-col text-white overflow-hidden z-30"
+          style={{
+             width: `${PANEL_WIDTH}px`,
+             top: `${toolsPanelPosition.y}px`,
+             left: `${toolsPanelPosition.x}px`,
+          }}
+        >
+          <div
+            className="p-2 bg-gray-700/80 flex items-center justify-between cursor-grab rounded-t-lg"
+            onMouseDown={handleToolsPanelMouseDown}
+          >
+            <h2 className="text-sm font-semibold">Herramientas del Mapa</h2>
+            <Button variant="ghost" size="icon" onClick={toggleToolsPanelCollapse} className="h-6 w-6 text-white hover:bg-gray-600/80">
+              {isToolsPanelCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+              <span className="sr-only">{isToolsPanelCollapsed ? 'Expandir' : 'Colapsar'}</span>
+            </Button>
+          </div>
+
+          {!isToolsPanelCollapsed && (
+            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+              <MapControls
+                  renderConfig={toolsPanelRenderConfig}
+                  onAddLayer={addLayer}
+                  isInspectModeActive={isInspectModeActive}
+                  onToggleInspectMode={() => setIsInspectModeActive(!isInspectModeActive)}
+                  selectedFeatureAttributes={selectedFeatureAttributes}
+                  onClearSelectedFeature={clearSelectedFeature}
+                  activeDrawTool={activeDrawTool}
+                  onToggleDrawingTool={toggleDrawingTool}
+                  onStopDrawingTool={stopDrawingTool}
+                  onClearDrawnFeatures={clearDrawnFeatures}
+                  onSaveDrawnFeaturesAsKML={saveDrawnFeaturesAsKML}
+                  isFetchingOSM={isFetchingOSM}
+                  onFetchOSMDataTrigger={fetchOSMData}
+                  osmCategoriesForSelection={osmCategoriesForSelection}
+                  selectedOSMCategoryIds={selectedOSMCategoryIds}
+                  onSelectedOSMCategoriesChange={setSelectedOSMCategoryIds}
+                  downloadFormat={downloadFormat}
+                  onDownloadFormatChange={setDownloadFormat}
+                  onDownloadOSMLayers={handleDownloadOSMLayers}
+                  isDownloading={isDownloading}
+                  // Props not relevant for tools panel, or handled by layers panel
+                  layers={[]} 
+                  onToggleLayerVisibility={() => {}}
+                  onRemoveLayer={() => {}}
+                  onZoomToLayerExtent={() => {}}
+              />
+            </div>
+          )}
+        </div>
+
       </div>
       <Toaster />
     </div>
   );
 }
+
+    
