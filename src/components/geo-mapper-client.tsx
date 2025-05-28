@@ -158,14 +158,21 @@ export default function GeoMapperClient() {
 
   // Effect to set initial position of the tools panel to the right
   useEffect(() => {
-    if (mapAreaRef.current) {
+    if (mapAreaRef.current && toolsPanelRef.current) {
       const mapRect = mapAreaRef.current.getBoundingClientRect();
+      const panelWidth = toolsPanelRef.current.offsetWidth || PANEL_WIDTH;
       setToolsPanelPosition({
-        x: mapRect.width - PANEL_WIDTH - PANEL_PADDING,
+        x: mapRect.width - panelWidth - PANEL_PADDING,
         y: PANEL_PADDING,
       });
     }
-  }, []); // Runs once after initial render
+     if (layersPanelRef.current) {
+        setLayersPanelPosition({
+            x: PANEL_PADDING,
+            y: PANEL_PADDING,
+        });
+    }
+  }, []); 
 
   const addLayer = useCallback((newLayer: MapLayer) => {
     setLayers(prevLayers => [...prevLayers, newLayer]);
@@ -188,7 +195,7 @@ export default function GeoMapperClient() {
     );
   }, []);
 
-  const setMapInstance = useCallback((mapInstance: OLMap) => {
+ const setMapInstance = useCallback((mapInstance: OLMap) => {
     mapRef.current = mapInstance;
 
     if (mapRef.current && !drawingLayerRef.current) { 
@@ -683,7 +690,6 @@ export default function GeoMapperClient() {
 
   const layersPanelRenderConfig = { layers: true };
   const toolsPanelRenderConfig = { 
-    import: true, 
     inspector: true, 
     osmCategories: true, 
     drawing: true, 
@@ -728,28 +734,27 @@ export default function GeoMapperClient() {
                   onToggleLayerVisibility={toggleLayerVisibility}
                   onRemoveLayer={removeLayer}
                   onZoomToLayerExtent={zoomToLayerExtent}
+                  onAddLayer={addLayer}
                   // Pass other necessary props that are only for layer management, if any.
                   // The rest can be conditionally excluded or passed as undefined if MapControls handles it.
-                  // For now, pass all, MapControls will ignore what it doesn't need for this mode.
-                  onAddLayer={addLayer}
-                  isInspectModeActive={isInspectModeActive}
-                  onToggleInspectMode={() => setIsInspectModeActive(!isInspectModeActive)}
-                  selectedFeatureAttributes={selectedFeatureAttributes}
-                  onClearSelectedFeature={clearSelectedFeature}
-                  activeDrawTool={activeDrawTool}
-                  onToggleDrawingTool={toggleDrawingTool}
-                  onStopDrawingTool={stopDrawingTool}
-                  onClearDrawnFeatures={clearDrawnFeatures}
-                  onSaveDrawnFeaturesAsKML={saveDrawnFeaturesAsKML}
-                  isFetchingOSM={isFetchingOSM}
-                  onFetchOSMDataTrigger={fetchOSMData}
-                  osmCategoriesForSelection={osmCategoriesForSelection}
-                  selectedOSMCategoryIds={selectedOSMCategoryIds}
-                  onSelectedOSMCategoriesChange={setSelectedOSMCategoryIds}
-                  downloadFormat={downloadFormat}
-                  onDownloadFormatChange={setDownloadFormat}
-                  onDownloadOSMLayers={handleDownloadOSMLayers}
-                  isDownloading={isDownloading}
+                  isInspectModeActive={isInspectModeActive} // Not used by layers panel directly
+                  onToggleInspectMode={() => {}} // Not used
+                  selectedFeatureAttributes={null} // Not used
+                  onClearSelectedFeature={() => {}} // Not used
+                  activeDrawTool={null} // Not used
+                  onToggleDrawingTool={() => {}} // Not used
+                  onStopDrawingTool={() => {}} // Not used
+                  onClearDrawnFeatures={() => {}} // Not used
+                  onSaveDrawnFeaturesAsKML={() => {}} // Not used
+                  isFetchingOSM={false} // Not used
+                  onFetchOSMDataTrigger={() => {}} // Not used
+                  osmCategoriesForSelection={[]} // Not used
+                  selectedOSMCategoryIds={[]} // Not used
+                  onSelectedOSMCategoriesChange={() => {}} // Not used
+                  downloadFormat={downloadFormat} // Not used
+                  onDownloadFormatChange={() => {}} // Not used
+                  onDownloadOSMLayers={() => {}} // Not used
+                  isDownloading={false} // Not used
               />
             </div>
           )}
@@ -780,7 +785,7 @@ export default function GeoMapperClient() {
             <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}>
               <MapControls
                   renderConfig={toolsPanelRenderConfig}
-                  onAddLayer={addLayer}
+                  onAddLayer={addLayer} // Still needed if tools panel allows direct layer add
                   isInspectModeActive={isInspectModeActive}
                   onToggleInspectMode={() => setIsInspectModeActive(!isInspectModeActive)}
                   selectedFeatureAttributes={selectedFeatureAttributes}
@@ -814,5 +819,3 @@ export default function GeoMapperClient() {
     </div>
   );
 }
-
-    
