@@ -1,11 +1,8 @@
 
 "use client";
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React from 'react';
 import type { Feature } from 'ol';
-import { KML, GeoJSON } from 'ol/format';
-import VectorLayer from 'ol/layer/Vector';
-import VectorSource from 'ol/source/Vector';
 import { useId } from 'react';
 import JSZip from 'jszip';
 import shpjs from 'shpjs';
@@ -18,7 +15,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   Upload, Layers, FileText, Loader2, MousePointerClick, XCircle, ZoomIn, Trash2,
-  Square, PenLine, Dot, Ban, Eraser, Save, ListFilter, Download
+  Square, PenLine, Dot, Ban, Eraser, Save, ListFilter, Download, MapPin // Added MapPin
 } from 'lucide-react';
 import {
   Accordion,
@@ -53,6 +50,7 @@ interface MapControlsProps {
   onClearDrawnFeatures: () => void;
   onSaveDrawnFeaturesAsKML: () => void;
   isFetchingOSM: boolean;
+  onFetchOSMDataTrigger: () => void; // New prop
   osmCategoriesForSelection: { id: string; name: string; }[];
   selectedOSMCategoryIds: string[];
   onSelectedOSMCategoriesChange: (ids: string[]) => void;
@@ -89,6 +87,7 @@ const MapControls: React.FC<MapControlsProps> = ({
   onClearDrawnFeatures,
   onSaveDrawnFeaturesAsKML,
   isFetchingOSM,
+  onFetchOSMDataTrigger, // New prop
   osmCategoriesForSelection,
   selectedOSMCategoryIds,
   onSelectedOSMCategoriesChange,
@@ -97,9 +96,9 @@ const MapControls: React.FC<MapControlsProps> = ({
   onDownloadOSMLayers,
   isDownloading,
 }) => {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectedMultipleFiles, setSelectedMultipleFiles] = useState<FileList | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
+  const [selectedMultipleFiles, setSelectedMultipleFiles] = React.useState<FileList | null>(null);
+  const [isLoading, setIsLoading] = React.useState(false);
   const fileInputId = useId();
   const { toast } = useToast();
 
@@ -118,14 +117,14 @@ const MapControls: React.FC<MapControlsProps> = ({
     }
   };
 
-  const resetFileInput = useCallback(() => {
+  const resetFileInput = React.useCallback(() => {
     setSelectedFile(null);
     setSelectedMultipleFiles(null);
     const fileInput = document.getElementById(fileInputId) as HTMLInputElement;
     if (fileInput) fileInput.value = '';
   }, [fileInputId]);
 
-  const handleFileUpload = useCallback(async () => {
+  const handleFileUpload = React.useCallback(async () => {
     if (!selectedFile && !selectedMultipleFiles) {
       return;
     }
@@ -150,12 +149,14 @@ const MapControls: React.FC<MapControlsProps> = ({
 
         if (shpFileBuffer && dbfFileBuffer) {
           const geojson = shpjs.combine([shpjs.parseShp(shpFileBuffer), shpjs.parseDbf(dbfFileBuffer)]);
-          const features = new GeoJSON().readFeatures(geojson, {
+          const features = new (await import('ol/format/GeoJSON')).default().readFeatures(geojson, { // Dynamic import for GeoJSON
             dataProjection: 'EPSG:4326',
             featureProjection: 'EPSG:3857',
           });
 
           if (features && features.length > 0) {
+            const VectorSource = (await import('ol/source/Vector')).default;
+            const VectorLayer = (await import('ol/layer/Vector')).default;
             const vectorSource = new VectorSource({ features });
             const vectorLayer = new VectorLayer({ source: vectorSource });
             const newLayerId = `${fileInputId}-${shapeFileName}-${Date.now()}`;
@@ -171,6 +172,12 @@ const MapControls: React.FC<MapControlsProps> = ({
         const fileName = selectedFile.name;
         const fileBaseName = fileName.substring(0, fileName.lastIndexOf('.'));
         const fileExtension = fileName.split('.').pop()?.toLowerCase();
+
+        const { default: GeoJSONFormat } = await import('ol/format/GeoJSON'); // Dynamic import
+        const { default: KMLFormat } = await import('ol/format/KML'); // Dynamic import
+        const { default: VectorSource } = await import('ol/source/Vector');
+        const { default: VectorLayer } = await import('ol/layer/Vector');
+
 
         if (fileExtension === 'zip') {
           const zip = await JSZip.loadAsync(await selectedFile.arrayBuffer());
@@ -191,7 +198,7 @@ const MapControls: React.FC<MapControlsProps> = ({
             const shpBuffer = await shpFile.async('arraybuffer');
             const dbfBuffer = await dbfFile.async('arraybuffer');
             const geojson = shpjs.combine([shpjs.parseShp(shpBuffer), shpjs.parseDbf(dbfBuffer)]);
-            const features = new GeoJSON().readFeatures(geojson, {
+            const features = new GeoJSONFormat().readFeatures(geojson, {
               dataProjection: 'EPSG:4326',
               featureProjection: 'EPSG:3857',
             });
@@ -213,9 +220,9 @@ const MapControls: React.FC<MapControlsProps> = ({
           const commonFormatOptions = { dataProjection: 'EPSG:4326', featureProjection: 'EPSG:3857' };
 
           if (fileExtension === 'kml') {
-            features = new KML().readFeatures(fileContent, commonFormatOptions);
+            features = new KMLFormat().readFeatures(fileContent, commonFormatOptions);
           } else if (fileExtension === 'geojson' || fileExtension === 'json') {
-            features = new GeoJSON().readFeatures(fileContent, commonFormatOptions);
+            features = new GeoJSONFormat().readFeatures(fileContent, commonFormatOptions);
           } else {
             throw new Error(`Tipo de archivo no soportado: .${fileExtension}. Por favor, cargue KML, GeoJSON, o un ZIP conteniendo un Shapefile.`);
           }
@@ -240,7 +247,7 @@ const MapControls: React.FC<MapControlsProps> = ({
     }
   }, [selectedFile, selectedMultipleFiles, onAddLayer, fileInputId, toast, setIsLoading, resetFileInput]);
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (selectedFile || selectedMultipleFiles) {
       handleFileUpload();
     }
@@ -433,8 +440,8 @@ const MapControls: React.FC<MapControlsProps> = ({
         <AccordionItem value="drawing-tools-section" className="border-b-0 bg-white/5 rounded-md">
           <AccordionTrigger className="p-3 hover:no-underline hover:bg-white/10 rounded-t-md data-[state=open]:rounded-b-none">
              <SectionHeader 
-              title="Herramientas de Dibujo"
-              description="Dibuje un polígono para obtener datos OSM."
+              title="Herramientas de Dibujo y OSM"
+              description="Dibuje y obtenga datos OSM."
               icon={PenLine} 
             />
           </AccordionTrigger>
@@ -478,27 +485,29 @@ const MapControls: React.FC<MapControlsProps> = ({
               </Button>
             )}
             <Separator className="my-2 bg-white/20" />
+             <Button 
+              onClick={onFetchOSMDataTrigger} 
+              className="w-full bg-primary/70 hover:bg-primary/90 text-primary-foreground text-xs h-8"
+              disabled={isFetchingOSM}
+            >
+              {isFetchingOSM ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <MapPin className="mr-2 h-3 w-3" />}
+              {isFetchingOSM ? 'Obteniendo Datos...' : 'Obtener Datos OSM (del último polígono)'}
+            </Button>
+            <Separator className="my-2 bg-white/20" />
             <Button 
               onClick={onClearDrawnFeatures} 
               variant="outline" 
               className="w-full text-xs h-8 border-white/30 hover:bg-red-500/20 hover:text-red-300 text-white/90"
-              disabled={isFetchingOSM}
             >
               <Eraser className="mr-2 h-3 w-3" /> Limpiar Dibujos
             </Button>
             <Button 
               onClick={onSaveDrawnFeaturesAsKML} 
               className="w-full bg-primary hover:bg-primary/90 text-primary-foreground text-xs h-8 mt-2"
-              disabled={isFetchingOSM}
             >
               <Save className="mr-2 h-3 w-3" /> Guardar Dibujos (KML)
             </Button>
-            {isFetchingOSM && (
-              <div className="flex items-center justify-center text-xs text-primary mt-2">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Obteniendo Datos OSM...
-              </div>
-            )}
+            
           </AccordionContent>
         </AccordionItem>
 
@@ -541,6 +550,3 @@ const MapControls: React.FC<MapControlsProps> = ({
 };
 
 export default MapControls;
-
-
-    
