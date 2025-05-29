@@ -5,7 +5,7 @@ import React, { useEffect, useRef } from 'react';
 import { Map as OLMap, View } from 'ol';
 import TileLayer from 'ol/layer/Tile';
 import OSM from 'ol/source/OSM';
-import XYZ from 'ol/source/XYZ'; // Stamen is now typically an XYZ source
+import XYZ from 'ol/source/XYZ';
 import {defaults as defaultControls} from 'ol/control';
 import { fromLonLat } from 'ol/proj';
 
@@ -24,16 +24,16 @@ export const BASE_LAYER_DEFINITIONS = [
     }),
   },
   {
-    id: 'osm-toner-lite',
-    name: 'OSM Gris (Stamen)',
+    id: 'carto-light',
+    name: 'OSM Gris (Carto)',
     createLayer: () => new TileLayer({
       source: new XYZ({ 
-        url: 'https://stamen-tiles-{a-d}.a.ssl.fastly.net/toner-lite/{z}/{x}/{y}{@2x}.png', // Common URL for Stamen Toner Lite
-        attributions: 'Map tiles by <a href="http://stamen.com">Stamen Design</a>, under <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a>. Data by <a href="http://openstreetmap.org">OpenStreetMap</a>, under <a href="http://www.openstreetmap.org/copyright">ODbL</a>.',
-        maxZoom: 20,
+        url: 'https://{a-d}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+        attributions: 'Map tiles by <a href="https://carto.com/attributions">Carto</a>, under CC BY 3.0. Data by <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>, under ODbL.',
+        maxZoom: 20, // Carto maps generally support up to zoom 20 or more
       }),
       visible: false, 
-      properties: { baseLayerId: 'osm-toner-lite', isBaseLayer: true, name: 'OSMGrayscaleBaseLayer' },
+      properties: { baseLayerId: 'carto-light', isBaseLayer: true, name: 'CartoGrayscaleBaseLayer' },
     }),
   },
   {
@@ -83,12 +83,15 @@ const MapView: React.FC<MapViewProps> = ({ mapRef, setMapInstance }) => {
     mapRef.current = map; 
     setMapInstance(map); 
 
+    // No direct layer manipulation here, GeoMapperClient handles synchronization
+    
     return () => {
       if (mapRef.current) {
         mapRef.current.setTarget(undefined); 
       }
     };
-  }, [mapRef, setMapInstance]); 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mapRef and setMapInstance are stable from useCallback
 
   return <div ref={mapElementRef} className="w-full h-full bg-gray-200" />;
 };
