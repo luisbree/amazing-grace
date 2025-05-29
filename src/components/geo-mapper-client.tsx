@@ -129,14 +129,14 @@ export default function GeoMapperClient() {
   
   // State for Tools Panel (right)
   const toolsPanelRef = useRef<HTMLDivElement>(null);
-  const [isToolsPanelCollapsed, setIsToolsPanelCollapsed] = useState(true); 
+  const [isToolsPanelCollapsed, setIsToolsPanelCollapsed] = useState(false); 
   const [toolsPanelPosition, setToolsPanelPosition] = useState({ x: PANEL_PADDING, y: PANEL_PADDING });
   const [isToolsPanelDragging, setIsToolsPanelDragging] = useState(false);
   const toolsPanelDragStartRef = useRef({ x: 0, y: 0, panelX: 0, panelY: 0 });
 
   // State for Layers Panel (left)
   const layersPanelRef = useRef<HTMLDivElement>(null);
-  const [isLayersPanelCollapsed, setIsLayersPanelCollapsed] = useState(true); 
+  const [isLayersPanelCollapsed, setIsLayersPanelCollapsed] = useState(false); 
   const [layersPanelPosition, setLayersPanelPosition] = useState({ x: PANEL_PADDING, y: PANEL_PADDING });
   const [isLayersPanelDragging, setIsLayersPanelDragging] = useState(false);
   const layersPanelDragStartRef = useRef({ x: 0, y: 0, panelX: 0, panelY: 0 });
@@ -147,7 +147,7 @@ export default function GeoMapperClient() {
   const { toast } = useToast();
 
   const drawingLayerRef = useRef<VectorLayerType<VectorSourceType<OLFeature<any>>> | null>(null);
-  const drawingSourceRef = useRef<VectorSourceType<OLFeature<any>> | null>(null);
+  const drawingSourceRef = useRef<VectorSourceType<OLFeature<any>>> | null>(null);
   const drawInteractionRef = useRef<Draw | null>(null);
 
   const [activeDrawTool, setActiveDrawTool] = useState<string | null>(null);
@@ -714,9 +714,9 @@ export default function GeoMapperClient() {
 
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
-      <header className="bg-primary text-primary-foreground p-4 shadow-md flex items-center">
+      <header className="bg-gray-800/60 backdrop-blur-md text-white p-4 shadow-md flex items-center">
         <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-3"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>
-        <h1 className="text-2xl font-semibold">Geo Mapper</h1>
+        <h1 className="text-2xl font-semibold">Visor DEAS</h1>
       </header>
       <div ref={mapAreaRef} className="relative flex-1 overflow-hidden">
         <MapView mapRef={mapRef} setMapInstance={setMapInstance} />
@@ -735,7 +735,7 @@ export default function GeoMapperClient() {
             className="p-2 bg-gray-700/80 flex items-center justify-between cursor-grab rounded-t-lg"
             onMouseDown={(e) => handlePanelMouseDown(e, 'layers')}
           >
-            <h2 className="text-sm font-semibold">Administrar Capas</h2>
+            <h2 className="text-sm font-semibold">Capas</h2>
             <Button variant="ghost" size="icon" onClick={toggleLayersPanelCollapse} className="h-6 w-6 text-white hover:bg-gray-600/80">
               {isLayersPanelCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
               <span className="sr-only">{isLayersPanelCollapsed ? 'Expandir' : 'Colapsar'}</span>
@@ -791,7 +791,7 @@ export default function GeoMapperClient() {
             className="p-2 bg-gray-700/80 flex items-center justify-between cursor-grab rounded-t-lg"
             onMouseDown={(e) => handlePanelMouseDown(e, 'tools')}
           >
-            <h2 className="text-sm font-semibold">Herramientas del Mapa</h2>
+            <h2 className="text-sm font-semibold">Herramientas</h2>
             <Button variant="ghost" size="icon" onClick={toggleToolsPanelCollapse} className="h-6 w-6 text-white hover:bg-gray-600/80">
               {isToolsPanelCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
               <span className="sr-only">{isToolsPanelCollapsed ? 'Expandir' : 'Colapsar'}</span>
@@ -839,6 +839,4 @@ export default function GeoMapperClient() {
   );
 }
 
-
-    
     
