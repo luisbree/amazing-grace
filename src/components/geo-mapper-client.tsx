@@ -6,7 +6,7 @@ import type { Map as OLMap, Feature as OLFeature } from 'ol';
 import type VectorLayerType from 'ol/layer/Vector';
 import type VectorSourceType from 'ol/source/Vector';
 import type { Extent } from 'ol/extent';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Map as MapIcon, Plus } from 'lucide-react'; // Added MapIcon, Plus
 import Draw from 'ol/interaction/Draw';
 import { KML, GeoJSON } from 'ol/format';
 import VectorLayer from 'ol/layer/Vector';
@@ -97,8 +97,8 @@ const availableBaseLayersForSelect = BASE_LAYER_DEFINITIONS.map(def => ({
 }));
 
 
-const PANEL_WIDTH = 350; // px
-const PANEL_PADDING = 16; // px
+const PANEL_WIDTH = 350; 
+const PANEL_PADDING = 16; 
 
 function triggerDownload(content: string, fileName: string, contentType: string) {
   const blob = new Blob([content], { type: contentType });
@@ -127,14 +127,12 @@ export default function GeoMapperClient() {
   const mapRef = useRef<OLMap | null>(null);
   const mapAreaRef = useRef<HTMLDivElement>(null);
   
-  // State for Tools Panel (right)
   const toolsPanelRef = useRef<HTMLDivElement>(null);
   const [isToolsPanelCollapsed, setIsToolsPanelCollapsed] = useState(false); 
   const [toolsPanelPosition, setToolsPanelPosition] = useState({ x: PANEL_PADDING, y: PANEL_PADDING });
   const [isToolsPanelDragging, setIsToolsPanelDragging] = useState(false);
   const toolsPanelDragStartRef = useRef({ x: 0, y: 0, panelX: 0, panelY: 0 });
 
-  // State for Layers Panel (left)
   const layersPanelRef = useRef<HTMLDivElement>(null);
   const [isLayersPanelCollapsed, setIsLayersPanelCollapsed] = useState(false); 
   const [layersPanelPosition, setLayersPanelPosition] = useState({ x: PANEL_PADDING, y: PANEL_PADDING });
@@ -146,8 +144,8 @@ export default function GeoMapperClient() {
 
   const { toast } = useToast();
 
+  const drawingSourceRef = useRef<VectorSourceType<OLFeature<any>> | null>(null);
   const drawingLayerRef = useRef<VectorLayerType<VectorSourceType<OLFeature<any>>> | null>(null);
-  const drawingSourceRef = useRef<VectorSourceType<OLFeature<any>>> | null>(null);
   const drawInteractionRef = useRef<Draw | null>(null);
 
   const [activeDrawTool, setActiveDrawTool] = useState<string | null>(null);
@@ -204,30 +202,61 @@ export default function GeoMapperClient() {
   const setMapInstance = useCallback((mapInstance: OLMap) => {
     mapRef.current = mapInstance;
 
-    if (mapRef.current && !drawingLayerRef.current) { 
+    if (!mapRef.current) {
+      console.error("setMapInstance called but mapRef.current is null.");
+      return;
+    }
+
+    // Critical check for ref variable validity
+    if (typeof drawingSourceRef !== 'object' || drawingSourceRef === null || !('current' in drawingSourceRef)) {
+        console.error("CRITICAL: drawingSourceRef is not a valid React ref object. Value:", drawingSourceRef, "Type:", typeof drawingSourceRef);
+        toast({ title: "Error Crítico", description: "Referencia de capa de dibujo (source) corrupta.", variant: "destructive"});
+        return; 
+    }
+    if (typeof drawingLayerRef !== 'object' || drawingLayerRef === null || !('current' in drawingLayerRef)) {
+        console.error("CRITICAL: drawingLayerRef is not a valid React ref object. Value:", drawingLayerRef, "Type:", typeof drawingLayerRef);
+        toast({ title: "Error Crítico", description: "Referencia de capa de dibujo (layer) corrupta.", variant: "destructive"});
+        return; 
+    }
+
+    // Proceed with initialization only if the drawing layer's .current property is not already set
+    if (!drawingLayerRef.current) { 
       try {
-        if (!drawingSourceRef.current) { 
+        // Initialize the source for the drawing layer if its .current property is null
+        if (!drawingSourceRef.current) {
              drawingSourceRef.current = new VectorSource({ wrapX: false });
         }
-        if (!drawingLayerRef.current) { 
-            drawingLayerRef.current = new VectorLayer({
-                source: drawingSourceRef.current, 
-                style: new Style({
-                fill: new Fill({ color: 'rgba(0, 150, 255, 0.2)' }),
-                stroke: new Stroke({ color: '#007bff', width: 2 }),
-                image: new CircleStyle({
-                    radius: 7,
-                    fill: new Fill({ color: '#007bff' }),
-                    stroke: new Stroke({ color: '#ffffff', width: 1.5 })
-                }),
-                }),
-                zIndex: 1000 
-            });
-            mapRef.current.addLayer(drawingLayerRef.current);
+        
+        // Ensure drawingSourceRef.current is valid before using it
+        if (!drawingSourceRef.current) {
+            console.error("CRITICAL: drawingSourceRef.current is null after attempting initialization. Cannot create drawing layer.");
+            toast({ title: "Error Crítico", description: "No se pudo inicializar la fuente de la capa de dibujo.", variant: "destructive"});
+            return; 
         }
+        
+        // Create and add the drawing layer
+        drawingLayerRef.current = new VectorLayer({
+            source: drawingSourceRef.current, 
+            style: new Style({
+            fill: new Fill({ color: 'rgba(0, 150, 255, 0.2)' }),
+            stroke: new Stroke({ color: '#007bff', width: 2 }),
+            image: new CircleStyle({
+                radius: 7,
+                fill: new Fill({ color: '#007bff' }),
+                stroke: new Stroke({ color: '#ffffff', width: 1.5 })
+            }),
+            }),
+            zIndex: 1000 
+        });
+        mapRef.current.addLayer(drawingLayerRef.current);
+        
       } catch (e: any) {
-        console.error("Error initializing drawing layer in setMapInstance:", e.message, { drawingSourceRef, drawingLayerRef });
-        toast({ title: "Error Crítico", description: "No se pudo inicializar la capa de dibujo.", variant: "destructive"});
+        // This catch handles errors during new VectorSource(), new VectorLayer(), or map.addLayer()
+        console.error("Error during drawing layer/source INSTANTIATION or map ADDITION:", e.message, { 
+          drawingSourceRef_current_value_exists: !!drawingSourceRef.current,
+          drawingLayerRef_current_value_exists: !!drawingLayerRef.current,
+        });
+        toast({ title: "Error Crítico", description: "No se pudo inicializar la capa de dibujo (instantiation).", variant: "destructive"});
       }
     }
   }, [toast]);
@@ -441,7 +470,6 @@ export default function GeoMapperClient() {
       const e_coord = parseFloat(extent4326_transformed[2].toFixed(6));
       console.log("Coordinates for Overpass (s,w,n,e - after toFixed(6)):", s_coord, w_coord, n_coord, e_coord);
 
-
       if (n_coord < s_coord) { 
           throw new Error(`Error de Bounding Box (N < S): Norte ${n_coord} es menor que Sur ${s_coord}. BBox original: ${extent4326_transformed.join(', ')}`);
       }
@@ -540,6 +568,9 @@ export default function GeoMapperClient() {
       const newDrawInteraction = new Draw({
         source: drawingSourceRef.current,
         type: toolType,
+      });
+      newDrawInteraction.on('drawend', () => {
+        // No longer automatically fetching OSM data here
       });
       mapRef.current.addInteraction(newDrawInteraction);
       drawInteractionRef.current = newDrawInteraction;
@@ -743,7 +774,7 @@ export default function GeoMapperClient() {
           </div>
 
           {!isLayersPanelCollapsed && (
-            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)', overflowY: 'auto' }}>
               <MapControls
                   renderConfig={layersPanelRenderConfig}
                   availableBaseLayers={availableBaseLayersForSelect}
@@ -754,6 +785,7 @@ export default function GeoMapperClient() {
                   onRemoveLayer={removeLayer}
                   onZoomToLayerExtent={zoomToLayerExtent}
                   onAddLayer={addLayer}
+                  // Props not relevant to layers panel, pass defaults or empty functions
                   isInspectModeActive={false} 
                   onToggleInspectMode={() => {}} 
                   selectedFeatureAttributes={null} 
@@ -799,7 +831,7 @@ export default function GeoMapperClient() {
           </div>
 
           {!isToolsPanelCollapsed && (
-            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+            <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)', overflowY: 'auto' }}>
               <MapControls
                   renderConfig={toolsPanelRenderConfig}
                   onAddLayer={addLayer} 
@@ -821,6 +853,7 @@ export default function GeoMapperClient() {
                   onDownloadFormatChange={setDownloadFormat}
                   onDownloadOSMLayers={handleDownloadOSMLayers}
                   isDownloading={isDownloading}
+                  // Props not relevant to tools panel, pass defaults or empty functions
                   availableBaseLayers={[]}
                   activeBaseLayerId={""}
                   onChangeBaseLayer={() => {}}
@@ -839,4 +872,4 @@ export default function GeoMapperClient() {
   );
 }
 
-    
+      
