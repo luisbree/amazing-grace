@@ -5,6 +5,8 @@ import React, { useEffect, useRef } from 'react';
 import { Map as OLMap, View } from 'ol';
 import TileLayer from 'ol/layer/Tile';
 import OSM from 'ol/source/OSM';
+import Stamen from 'ol/source/Stamen';
+import XYZ from 'ol/source/XYZ';
 import {defaults as defaultControls} from 'ol/control';
 import { fromLonLat } from 'ol/proj';
 
@@ -12,6 +14,43 @@ interface MapViewProps {
   mapRef: React.MutableRefObject<OLMap | null>;
   setMapInstance: (map: OLMap) => void;
 }
+
+export const BASE_LAYER_DEFINITIONS = [
+  {
+    id: 'osm-standard',
+    name: 'OpenStreetMap',
+    createLayer: () => new TileLayer({
+      source: new OSM(),
+      properties: { baseLayerId: 'osm-standard', isBaseLayer: true, name: 'OSMBaseLayer' }, // Added name for existing logic
+    }),
+  },
+  {
+    id: 'osm-toner-lite',
+    name: 'OSM Gris (Stamen)',
+    createLayer: () => new TileLayer({
+      source: new Stamen({ 
+        layer: 'toner-lite',
+        attributions: 'Map tiles by <a href="http://stamen.com">Stamen Design</a>, under <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a>. Data by <a href="http://openstreetmap.org">OpenStreetMap</a>, under <a href="http://www.openstreetmap.org/copyright">ODbL</a>.'
+      }),
+      visible: false, // Initially hidden
+      properties: { baseLayerId: 'osm-toner-lite', isBaseLayer: true, name: 'OSMGrayscaleBaseLayer' },
+    }),
+  },
+  {
+    id: 'esri-satellite',
+    name: 'ESRI Satelital',
+    createLayer: () => new TileLayer({
+      source: new XYZ({
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        attributions: 'Tiles © Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+        maxZoom: 19,
+      }),
+      visible: false, // Initially hidden
+      properties: { baseLayerId: 'esri-satellite', isBaseLayer: true, name: 'ESRISatelliteBaseLayer' },
+    }),
+  },
+] as const;
+
 
 const MapView: React.FC<MapViewProps> = ({ mapRef, setMapInstance }) => {
   const mapElementRef = useRef<HTMLDivElement>(null);
@@ -21,15 +60,11 @@ const MapView: React.FC<MapViewProps> = ({ mapRef, setMapInstance }) => {
       return;
     }
 
-    const osmLayer = new TileLayer({
-      source: new OSM(),
-    });
-    // Give the base layer a name for easier identification if needed
-    osmLayer.set('name', 'OSMBaseLayer');
+    const initialBaseLayers = BASE_LAYER_DEFINITIONS.map(def => def.createLayer());
 
     const map = new OLMap({
       target: mapElementRef.current,
-      layers: [osmLayer],
+      layers: [...initialBaseLayers], // Add all base layers
       view: new View({
         center: fromLonLat([-60.0, -36.5], 'EPSG:3857'),
         zoom: 7,
@@ -59,4 +94,3 @@ const MapView: React.FC<MapViewProps> = ({ mapRef, setMapInstance }) => {
 };
 
 export default MapView;
-

@@ -6,6 +6,11 @@ import type { Feature } from 'ol';
 import { useId } from 'react';
 import JSZip from 'jszip';
 import shpjs from 'shpjs';
+import type { GeoJSON as GeoJSONFormatType } from 'ol/format';
+import type KMLFormatType from 'ol/format/KML';
+import type VectorSourceType from 'ol/source/Vector';
+import type VectorLayerType from 'ol/layer/Vector';
+
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,7 +20,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   Layers, FileText, Loader2, MousePointerClick, XCircle, ZoomIn, Trash2,
-  Square, PenLine, Dot, Ban, Eraser, Save, ListFilter, Download, MapPin, Plus
+  Square, PenLine, Dot, Ban, Eraser, Save, ListFilter, Download, MapPin, Plus, Map
 } from 'lucide-react';
 import {
   Accordion,
@@ -35,6 +40,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Separator } from '@/components/ui/separator';
 
 interface RenderConfig {
+  baseLayers?: boolean;
   layers?: boolean;
   inspector?: boolean;
   osmCategories?: boolean;
@@ -42,31 +48,49 @@ interface RenderConfig {
   download?: boolean;
 }
 
+interface BaseLayerOptionForSelect {
+  id: string;
+  name: string;
+}
+
 interface MapControlsProps {
   renderConfig: RenderConfig;
   onAddLayer: (layer: MapLayer) => void;
-  layers: MapLayer[];
-  onToggleLayerVisibility: (layerId: string) => void;
-  onRemoveLayer: (layerId: string) => void;
-  isInspectModeActive: boolean;
-  onToggleInspectMode: () => void;
-  selectedFeatureAttributes: Record<string, any> | null;
-  onClearSelectedFeature: () => void;
-  onZoomToLayerExtent: (layerId: string) => void;
-  activeDrawTool: string | null;
-  onToggleDrawingTool: (toolType: 'Polygon' | 'LineString' | 'Point') => void;
-  onStopDrawingTool: () => void;
-  onClearDrawnFeatures: () => void;
-  onSaveDrawnFeaturesAsKML: () => void;
-  isFetchingOSM: boolean;
-  onFetchOSMDataTrigger: () => void;
-  osmCategoriesForSelection: { id: string; name: string; }[];
-  selectedOSMCategoryIds: string[];
-  onSelectedOSMCategoriesChange: (ids: string[]) => void;
-  downloadFormat: string;
-  onDownloadFormatChange: (format: string) => void;
-  onDownloadOSMLayers: () => void;
-  isDownloading: boolean;
+  
+  // Base Layer Props (only for layers panel)
+  availableBaseLayers?: BaseLayerOptionForSelect[];
+  activeBaseLayerId?: string;
+  onChangeBaseLayer?: (id: string) => void;
+
+  // Layer Management Props (only for layers panel)
+  layers?: MapLayer[]; // Made optional for tools panel
+  onToggleLayerVisibility?: (layerId: string) => void;
+  onRemoveLayer?: (layerId: string) => void;
+  onZoomToLayerExtent?: (layerId: string) => void;
+  
+  // Inspector Props (only for tools panel)
+  isInspectModeActive?: boolean;
+  onToggleInspectMode?: () => void;
+  selectedFeatureAttributes?: Record<string, any> | null;
+  onClearSelectedFeature?: () => void;
+
+  // Drawing & OSM Props (only for tools panel)
+  activeDrawTool?: string | null;
+  onToggleDrawingTool?: (toolType: 'Polygon' | 'LineString' | 'Point') => void;
+  onStopDrawingTool?: () => void;
+  onClearDrawnFeatures?: () => void;
+  onSaveDrawnFeaturesAsKML?: () => void;
+  isFetchingOSM?: boolean;
+  onFetchOSMDataTrigger?: () => void;
+  osmCategoriesForSelection?: { id: string; name: string; }[];
+  selectedOSMCategoryIds?: string[];
+  onSelectedOSMCategoriesChange?: (ids: string[]) => void;
+
+  // Download Props (only for tools panel)
+  downloadFormat?: string;
+  onDownloadFormatChange?: (format: string) => void;
+  onDownloadOSMLayers?: () => void;
+  isDownloading?: boolean;
 }
 
 const SectionHeader: React.FC<{ title: string; description?: string; icon: React.ElementType }> = ({ title, description, icon: Icon }) => (
@@ -83,28 +107,37 @@ const SectionHeader: React.FC<{ title: string; description?: string; icon: React
 const MapControls: React.FC<MapControlsProps> = ({ 
   renderConfig,
   onAddLayer, 
-  layers, 
-  onToggleLayerVisibility,
-  onRemoveLayer,
-  isInspectModeActive,
-  onToggleInspectMode,
-  selectedFeatureAttributes,
-  onClearSelectedFeature,
-  onZoomToLayerExtent,
-  activeDrawTool,
-  onToggleDrawingTool,
-  onStopDrawingTool,
-  onClearDrawnFeatures,
-  onSaveDrawnFeaturesAsKML,
-  isFetchingOSM,
-  onFetchOSMDataTrigger,
-  osmCategoriesForSelection,
-  selectedOSMCategoryIds,
-  onSelectedOSMCategoriesChange,
-  downloadFormat,
-  onDownloadFormatChange,
-  onDownloadOSMLayers,
-  isDownloading,
+  
+  availableBaseLayers,
+  activeBaseLayerId,
+  onChangeBaseLayer,
+
+  layers = [], 
+  onToggleLayerVisibility = () => {},
+  onRemoveLayer = () => {},
+  onZoomToLayerExtent = () => {},
+
+  isInspectModeActive = false,
+  onToggleInspectMode = () => {},
+  selectedFeatureAttributes = null,
+  onClearSelectedFeature = () => {},
+
+  activeDrawTool = null,
+  onToggleDrawingTool = () => {},
+  onStopDrawingTool = () => {},
+  onClearDrawnFeatures = () => {},
+  onSaveDrawnFeaturesAsKML = () => {},
+
+  isFetchingOSM = false,
+  onFetchOSMDataTrigger = () => {},
+  osmCategoriesForSelection = [],
+  selectedOSMCategoryIds = [],
+  onSelectedOSMCategoriesChange = () => {},
+
+  downloadFormat = 'geojson',
+  onDownloadFormatChange = () => {},
+  onDownloadOSMLayers = () => {},
+  isDownloading = false,
 }) => {
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
   const [selectedMultipleFiles, setSelectedMultipleFiles] = React.useState<FileList | null>(null);
@@ -117,17 +150,13 @@ const MapControls: React.FC<MapControlsProps> = ({
   const prevLayersLengthRef = React.useRef(layers.length);
 
   React.useEffect(() => {
-    if (prevLayersLengthRef.current === 0 && layers.length > 0) {
-      // First layer just added
-      setOpenAccordionItems(prevOpenItems => {
-        if (!prevOpenItems.includes('layers-section')) {
-          return [...prevOpenItems, 'layers-section'];
-        }
-        return prevOpenItems;
-      });
+    if (renderConfig.layers && layers.length > 0 && prevLayersLengthRef.current === 0) {
+       if (!openAccordionItems.includes('layers-section')) {
+         setOpenAccordionItems(prevOpenItems => [...prevOpenItems, 'layers-section']);
+       }
     }
     prevLayersLengthRef.current = layers.length;
-  }, [layers.length]);
+  }, [layers.length, renderConfig.layers, openAccordionItems]);
 
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -188,7 +217,7 @@ const MapControls: React.FC<MapControlsProps> = ({
             const vectorSource = new VectorSource({ features });
             const vectorLayer = new VectorLayer({ source: vectorSource });
             const newLayerId = `${uniqueFileId}-${shapeFileName}`;
-            onAddLayer({ id: newLayerId, name: shapeFileName, olLayer: vectorLayer, visible: true });
+            onAddLayer({ id: newLayerId, name: shapeFileName, olLayer: vectorLayer as VectorLayerType<VectorSourceType<Feature<any>>>, visible: true });
             toast({ title: "Capa Añadida", description: `${shapeFileName} añadido exitosamente al mapa.` });
           } else {
             throw new Error(`No se encontraron entidades en Shapefile ${shapeFileName} o los archivos están vacíos.`);
@@ -201,10 +230,11 @@ const MapControls: React.FC<MapControlsProps> = ({
         const fileBaseName = fileName.substring(0, fileName.lastIndexOf('.'));
         const fileExtension = fileName.split('.').pop()?.toLowerCase();
 
-        const { default: GeoJSONFormat } = await import('ol/format/GeoJSON');
-        const { default: KMLFormat } = await import('ol/format/KML');
-        const { default: VectorSource } = await import('ol/source/Vector');
-        const { default: VectorLayer } = await import('ol/layer/Vector');
+        const { default: GeoJSONFormat } = await import('ol/format/GeoJSON') as { default: typeof GeoJSONFormatType };
+        const { default: KMLFormat } = await import('ol/format/KML') as { default: typeof KMLFormatType };
+        const { default: VectorSource } = await import('ol/source/Vector') as { default: typeof VectorSourceType };
+        const { default: VectorLayer } = await import('ol/layer/Vector') as { default: typeof VectorLayerType };
+
         let features: Feature[] | undefined;
         const commonFormatOptions = { dataProjection: 'EPSG:4326', featureProjection: 'EPSG:3857' };
 
@@ -214,7 +244,7 @@ const MapControls: React.FC<MapControlsProps> = ({
           let kmlFileEntry: JSZip.JSZipObject | null = null;
           let kmlFileNameInZip = fileBaseName;
           
-          kmlFileEntry = zip.file(/^doc\.kml$/i)?.[0] || zip.file(/\.kml$/i)?.[0] || null;
+          kmlFileEntry = zip.file(/^doc\\.kml$/i)?.[0] || zip.file(/\\.kml$/i)?.[0] || null;
           
           if (kmlFileEntry) {
             kmlFileNameInZip = kmlFileEntry.name.substring(0, kmlFileEntry.name.lastIndexOf('.'));
@@ -248,7 +278,7 @@ const MapControls: React.FC<MapControlsProps> = ({
             toast({ title: "Capa Añadida", description: `${shpFileNameInZip} (Shapefile de ZIP) añadido exitosamente.` });
           } else {
             let kmlFileEntry: JSZip.JSZipObject | null = null;
-            kmlFileEntry = zip.file(/^doc\.kml$/i)?.[0] || zip.file(/\.kml$/i)?.[0] || null;
+            kmlFileEntry = zip.file(/^doc\\.kml$/i)?.[0] || zip.file(/\\.kml$/i)?.[0] || null;
             if (kmlFileEntry) {
               const kmlFileNameInZip = kmlFileEntry.name.substring(0, kmlFileEntry.name.lastIndexOf('.'));
               const kmlContent = await kmlFileEntry.async('text');
@@ -274,7 +304,7 @@ const MapControls: React.FC<MapControlsProps> = ({
           const vectorSource = new VectorSource({ features });
           const vectorLayer = new VectorLayer({ source: vectorSource });
           const newLayerId = `${uniqueFileId}-${fileBaseName}`;
-          onAddLayer({ id: newLayerId, name: fileBaseName, olLayer: vectorLayer, visible: true });
+          onAddLayer({ id: newLayerId, name: fileBaseName, olLayer: vectorLayer as VectorLayerType<VectorSourceType<Feature<any>>>, visible: true });
         } else if (features) { 
            toast({ title: "Capa Vacía", description: `No se encontraron entidades en ${fileName}.`, variant: "destructive" });
         }
@@ -289,7 +319,7 @@ const MapControls: React.FC<MapControlsProps> = ({
   }, [selectedFile, selectedMultipleFiles, onAddLayer, toast, setIsLoading, resetFileInput, uniqueIdPrefix]);
 
   React.useEffect(() => {
-    if (selectedFile || selectedMultipleFiles) {
+    if ((selectedFile || selectedMultipleFiles)) { 
       handleFileUpload();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -310,6 +340,23 @@ const MapControls: React.FC<MapControlsProps> = ({
   return (
     <ScrollArea className="h-full bg-transparent text-white">
       <div className="p-2 space-y-2">
+        {renderConfig.baseLayers && availableBaseLayers && activeBaseLayerId && onChangeBaseLayer && (
+          <div className="mb-2 p-2 bg-white/5 rounded-md">
+            <Label htmlFor={`${uniqueIdPrefix}-base-layer-select`} className="text-xs font-medium text-white/90 mb-1 block">Capa Base</Label>
+            <Select value={activeBaseLayerId} onValueChange={onChangeBaseLayer}>
+              <SelectTrigger id={`${uniqueIdPrefix}-base-layer-select`} className="w-full text-xs h-8 border-white/30 bg-black/20 text-white/90 focus:ring-primary">
+                <SelectValue placeholder="Seleccionar capa base" />
+              </SelectTrigger>
+              <SelectContent className="bg-gray-700 text-white border-gray-600">
+                {availableBaseLayers.map(bl => (
+                  <SelectItem key={bl.id} value={bl.id} className="text-xs hover:bg-gray-600 focus:bg-gray-600">{bl.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+             <Separator className="my-3 bg-white/15" />
+          </div>
+        )}
+
         {renderConfig.layers && (
           <div className="mb-2">
             <Input
@@ -353,7 +400,7 @@ const MapControls: React.FC<MapControlsProps> = ({
                   icon={Layers} 
                 />
               </AccordionTrigger>
-              <AccordionContent className="p-0 pt-0 border-t border-white/10 bg-black/10 rounded-b-md">
+              <AccordionContent className="p-0 pt-0 border-t border-white/10 bg-transparent rounded-b-md">
                 {layers.length === 0 ? (
                   <div className="text-center py-6 px-3">
                     <Layers className="mx-auto h-10 w-10 text-gray-400/40" />
@@ -364,8 +411,8 @@ const MapControls: React.FC<MapControlsProps> = ({
                   <ScrollArea className="max-h-48 p-2"> 
                     <ul className="space-y-1.5">
                       {layers.map((layer) => (
-                        <li key={layer.id} className="flex items-center justify-between p-1.5 rounded-md border border-white/15 hover:bg-white/10 transition-colors">
-                          <Checkbox
+                        <li key={layer.id} className="flex items-center justify-between p-1.5 rounded-md border border-white/15 bg-black/10 hover:bg-white/15 transition-colors">
+                           <Checkbox
                               id={`layer-toggle-${layer.id}`}
                               checked={layer.visible}
                               onCheckedChange={() => onToggleLayerVisibility(layer.id)}
@@ -375,7 +422,7 @@ const MapControls: React.FC<MapControlsProps> = ({
                           <Label htmlFor={`layer-toggle-${layer.id}`} className="flex-1 cursor-pointer truncate pr-1 text-xs font-medium text-white" title={layer.name}>
                             {layer.name}
                           </Label>
-                          <div className="flex items-center space-x-1">
+                          <div className="flex items-center space-x-0.5">
                             <Button
                               variant="ghost"
                               size="icon"
@@ -384,7 +431,7 @@ const MapControls: React.FC<MapControlsProps> = ({
                               aria-label={`Zoom a ${layer.name}`}
                               title="Ir a la extensión de la capa"
                             >
-                              <ZoomIn className="h-4 w-4" />
+                              <ZoomIn className="h-3.5 w-3.5" />
                             </Button>
                             <Button
                               variant="ghost"
@@ -394,7 +441,7 @@ const MapControls: React.FC<MapControlsProps> = ({
                               aria-label={`Eliminar ${layer.name}`}
                               title="Eliminar capa"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </div>
                         </li>
@@ -414,7 +461,7 @@ const MapControls: React.FC<MapControlsProps> = ({
                   icon={MousePointerClick} 
                 />
               </AccordionTrigger>
-              <AccordionContent className="p-3 pt-2 space-y-2 border-t border-white/10 bg-black/10 rounded-b-md">
+              <AccordionContent className="p-3 pt-2 space-y-2 border-t border-white/10 bg-transparent rounded-b-md">
                 <Button 
                   onClick={onToggleInspectMode} 
                   variant={isInspectModeActive ? "secondary" : "outline"} 
@@ -429,7 +476,7 @@ const MapControls: React.FC<MapControlsProps> = ({
                     <Button onClick={onClearSelectedFeature} variant="outline" className="w-full text-xs h-8 border-white/30 hover:bg-white/10 text-white/90">
                       <XCircle className="mr-2 h-3 w-3" /> Limpiar Selección
                     </Button>
-                    <Card className="bg-black/20 border-white/10 max-h-32">
+                    <Card className="bg-black/20 border-white/10 max-h-32 text-white">
                       <CardHeader className="p-1.5">
                         <CardTitle className="text-xs font-medium text-white/90">Atributos de Entidad</CardTitle>
                       </CardHeader>
@@ -464,7 +511,7 @@ const MapControls: React.FC<MapControlsProps> = ({
                   icon={ListFilter} 
                 />
               </AccordionTrigger>
-              <AccordionContent className="p-3 pt-2 border-t border-white/10 bg-black/10 rounded-b-md">
+              <AccordionContent className="p-3 pt-2 border-t border-white/10 bg-transparent rounded-b-md">
                 <ScrollArea className="h-32"> 
                   <div className="space-y-1.5">
                     {osmCategoriesForSelection.map(category => (
@@ -495,7 +542,7 @@ const MapControls: React.FC<MapControlsProps> = ({
                   icon={PenLine} 
                 />
               </AccordionTrigger>
-              <AccordionContent className="p-3 pt-2 space-y-2 border-t border-white/10 bg-black/10 rounded-b-md">
+              <AccordionContent className="p-3 pt-2 space-y-2 border-t border-white/10 bg-transparent rounded-b-md">
                 <div className="grid grid-cols-3 gap-2">
                   <Button 
                     onClick={() => onToggleDrawingTool('Polygon')} 
@@ -573,11 +620,11 @@ const MapControls: React.FC<MapControlsProps> = ({
                   icon={Download} 
                 />
               </AccordionTrigger>
-              <AccordionContent className="p-3 pt-2 space-y-3 border-t border-white/10 bg-black/10 rounded-b-md">
+              <AccordionContent className="p-3 pt-2 space-y-3 border-t border-white/10 bg-transparent rounded-b-md">
                 <div>
-                  <Label htmlFor="download-format-select" className="text-xs font-medium text-white/90 mb-1 block">Formato de Descarga</Label>
+                  <Label htmlFor={`${uniqueIdPrefix}-download-format-select`} className="text-xs font-medium text-white/90 mb-1 block">Formato de Descarga</Label>
                   <Select value={downloadFormat} onValueChange={onDownloadFormatChange}>
-                    <SelectTrigger id="download-format-select" className="w-full text-xs h-8 border-white/30 bg-black/20 text-white/90 focus:ring-primary">
+                    <SelectTrigger id={`${uniqueIdPrefix}-download-format-select`} className="w-full text-xs h-8 border-white/30 bg-black/20 text-white/90 focus:ring-primary">
                       <SelectValue placeholder="Seleccionar formato" />
                     </SelectTrigger>
                     <SelectContent className="bg-gray-700 text-white border-gray-600">
@@ -605,3 +652,5 @@ const MapControls: React.FC<MapControlsProps> = ({
 };
 
 export default MapControls;
+
+    

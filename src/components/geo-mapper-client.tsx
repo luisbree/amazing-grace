@@ -16,7 +16,7 @@ import { transformExtent } from 'ol/proj';
 import osmtogeojson from 'osmtogeojson';
 import shpwrite from 'shp-write';
 
-import MapView from '@/components/map-view';
+import MapView, { BASE_LAYER_DEFINITIONS } from '@/components/map-view';
 import MapControls from '@/components/map-controls';
 import { Toaster } from "@/components/ui/toaster";
 import { useToast } from "@/hooks/use-toast";
@@ -91,6 +91,12 @@ const osmCategoryConfig: OSMCategoryConfig[] = [
 
 const osmCategoriesForSelection = osmCategoryConfig.map(({ id, name }) => ({ id, name }));
 
+const availableBaseLayersForSelect = BASE_LAYER_DEFINITIONS.map(def => ({
+  id: def.id,
+  name: def.name,
+}));
+
+
 const PANEL_WIDTH = 350; // px
 const PANEL_PADDING = 16; // px
 
@@ -123,14 +129,14 @@ export default function GeoMapperClient() {
   
   // State for Tools Panel (right)
   const toolsPanelRef = useRef<HTMLDivElement>(null);
-  const [isToolsPanelCollapsed, setIsToolsPanelCollapsed] = useState(false);
+  const [isToolsPanelCollapsed, setIsToolsPanelCollapsed] = useState(true); 
   const [toolsPanelPosition, setToolsPanelPosition] = useState({ x: PANEL_PADDING, y: PANEL_PADDING });
   const [isToolsPanelDragging, setIsToolsPanelDragging] = useState(false);
   const toolsPanelDragStartRef = useRef({ x: 0, y: 0, panelX: 0, panelY: 0 });
 
   // State for Layers Panel (left)
   const layersPanelRef = useRef<HTMLDivElement>(null);
-  const [isLayersPanelCollapsed, setIsLayersPanelCollapsed] = useState(false);
+  const [isLayersPanelCollapsed, setIsLayersPanelCollapsed] = useState(true); 
   const [layersPanelPosition, setLayersPanelPosition] = useState({ x: PANEL_PADDING, y: PANEL_PADDING });
   const [isLayersPanelDragging, setIsLayersPanelDragging] = useState(false);
   const layersPanelDragStartRef = useRef({ x: 0, y: 0, panelX: 0, panelY: 0 });
@@ -155,8 +161,8 @@ export default function GeoMapperClient() {
 
   const [downloadFormat, setDownloadFormat] = useState<string>('geojson');
   const [isDownloading, setIsDownloading] = useState(false);
+  const [activeBaseLayerId, setActiveBaseLayerId] = useState<string>(BASE_LAYER_DEFINITIONS[0].id);
 
-  // Effect to set initial position of the tools panel to the right
   useEffect(() => {
     if (mapAreaRef.current && toolsPanelRef.current) {
       const mapRect = mapAreaRef.current.getBoundingClientRect();
@@ -195,7 +201,7 @@ export default function GeoMapperClient() {
     );
   }, []);
 
- const setMapInstance = useCallback((mapInstance: OLMap) => {
+  const setMapInstance = useCallback((mapInstance: OLMap) => {
     mapRef.current = mapInstance;
 
     if (mapRef.current && !drawingLayerRef.current) { 
@@ -231,10 +237,8 @@ export default function GeoMapperClient() {
     if (!mapRef.current) return;
     const currentMap = mapRef.current;
 
-    const baseLayer = currentMap.getLayers().getArray().find(l => l.get('name') === 'OSMBaseLayer');
-    
     const olMapVectorLayers = currentMap.getLayers().getArray()
-      .filter(l => l !== baseLayer && l !== drawingLayerRef.current) as VectorLayerType<VectorSourceType<OLFeature<any>>>[];
+      .filter(l => !l.get('isBaseLayer') && l !== drawingLayerRef.current) as VectorLayerType<VectorSourceType<OLFeature<any>>>[];
     
     olMapVectorLayers.forEach(olMapLayer => {
         currentMap.removeLayer(olMapLayer);
@@ -245,13 +249,14 @@ export default function GeoMapperClient() {
         currentMap.addLayer(appLayer.olLayer);
       }
       appLayer.olLayer.setVisible(appLayer.visible);
+      appLayer.olLayer.setZIndex(100 + layers.indexOf(appLayer));
     });
 
     if (drawingLayerRef.current) {
       if (!currentMap.getLayers().getArray().includes(drawingLayerRef.current)) {
          currentMap.addLayer(drawingLayerRef.current);
       }
-      drawingLayerRef.current.setZIndex(layers.length + 100); 
+      drawingLayerRef.current.setZIndex(100 + layers.length + 100); 
     }
 
   }, [layers]); 
@@ -319,29 +324,26 @@ export default function GeoMapperClient() {
   const toggleToolsPanelCollapse = useCallback(() => setIsToolsPanelCollapsed(prev => !prev), []);
   const toggleLayersPanelCollapse = useCallback(() => setIsLayersPanelCollapsed(prev => !prev), []);
 
-  const handleToolsPanelMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!toolsPanelRef.current) return;
-    setIsToolsPanelDragging(true);
-    toolsPanelDragStartRef.current = {
+  const handlePanelMouseDown = useCallback((
+    e: React.MouseEvent<HTMLDivElement>, 
+    panelType: 'tools' | 'layers'
+  ) => {
+    const panelRef = panelType === 'tools' ? toolsPanelRef : layersPanelRef;
+    const setDragging = panelType === 'tools' ? setIsToolsPanelDragging : setIsLayersPanelDragging;
+    const dragStartRef = panelType === 'tools' ? toolsPanelDragStartRef : layersPanelDragStartRef;
+    const position = panelType === 'tools' ? toolsPanelPosition : layersPanelPosition;
+
+    if (!panelRef.current) return;
+    setDragging(true);
+    dragStartRef.current = {
       x: e.clientX,
       y: e.clientY,
-      panelX: toolsPanelPosition.x,
-      panelY: toolsPanelPosition.y,
+      panelX: position.x,
+      panelY: position.y,
     };
     e.preventDefault();
-  }, [toolsPanelPosition.x, toolsPanelPosition.y]);
+  }, [toolsPanelPosition, layersPanelPosition]);
   
-  const handleLayersPanelMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!layersPanelRef.current) return;
-    setIsLayersPanelDragging(true);
-    layersPanelDragStartRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      panelX: layersPanelPosition.x,
-      panelY: layersPanelPosition.y,
-    };
-    e.preventDefault();
-  }, [layersPanelPosition.x, layersPanelPosition.y]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -390,7 +392,7 @@ export default function GeoMapperClient() {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isToolsPanelDragging, isLayersPanelDragging]);
+  }, [isToolsPanelDragging, isLayersPanelDragging, toolsPanelDragStartRef, layersPanelDragStartRef]);
 
   const fetchOSMData = useCallback(async () => {
     if (!drawingSourceRef.current) {
@@ -443,7 +445,7 @@ export default function GeoMapperClient() {
       if (n_coord < s_coord) { 
           throw new Error(`Error de Bounding Box (N < S): Norte ${n_coord} es menor que Sur ${s_coord}. BBox original: ${extent4326_transformed.join(', ')}`);
       }
-      if (e_coord < w_coord && Math.abs(e_coord - w_coord) < 180) { // Check for anti-meridian crossing is simplified
+      if (e_coord < w_coord && Math.abs(e_coord - w_coord) < 180) { 
           throw new Error(`Error de Bounding Box (E < W): Este ${e_coord} es menor que Oeste ${w_coord} (sin cruzar anti-meridiano). BBox original: ${extent4326_transformed.join(', ')}`);
       }
             
@@ -688,7 +690,21 @@ export default function GeoMapperClient() {
     }
   }, [layers, downloadFormat, toast]);
 
-  const layersPanelRenderConfig = { layers: true };
+  const handleChangeBaseLayer = useCallback((newBaseLayerId: string) => {
+    if (mapRef.current) {
+      mapRef.current.getLayers().forEach(layer => {
+        if (layer.get('isBaseLayer')) {
+          layer.setVisible(layer.get('baseLayerId') === newBaseLayerId);
+        }
+      });
+      setActiveBaseLayerId(newBaseLayerId);
+    }
+  }, []);
+
+  const layersPanelRenderConfig = { 
+    baseLayers: true,
+    layers: true 
+  };
   const toolsPanelRenderConfig = { 
     inspector: true, 
     osmCategories: true, 
@@ -717,7 +733,7 @@ export default function GeoMapperClient() {
         >
           <div
             className="p-2 bg-gray-700/80 flex items-center justify-between cursor-grab rounded-t-lg"
-            onMouseDown={handleLayersPanelMouseDown}
+            onMouseDown={(e) => handlePanelMouseDown(e, 'layers')}
           >
             <h2 className="text-sm font-semibold">Administrar Capas</h2>
             <Button variant="ghost" size="icon" onClick={toggleLayersPanelCollapse} className="h-6 w-6 text-white hover:bg-gray-600/80">
@@ -730,31 +746,32 @@ export default function GeoMapperClient() {
             <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}>
               <MapControls
                   renderConfig={layersPanelRenderConfig}
+                  availableBaseLayers={availableBaseLayersForSelect}
+                  activeBaseLayerId={activeBaseLayerId}
+                  onChangeBaseLayer={handleChangeBaseLayer}
                   layers={layers}
                   onToggleLayerVisibility={toggleLayerVisibility}
                   onRemoveLayer={removeLayer}
                   onZoomToLayerExtent={zoomToLayerExtent}
                   onAddLayer={addLayer}
-                  // Pass other necessary props that are only for layer management, if any.
-                  // The rest can be conditionally excluded or passed as undefined if MapControls handles it.
-                  isInspectModeActive={isInspectModeActive} // Not used by layers panel directly
-                  onToggleInspectMode={() => {}} // Not used
-                  selectedFeatureAttributes={null} // Not used
-                  onClearSelectedFeature={() => {}} // Not used
-                  activeDrawTool={null} // Not used
-                  onToggleDrawingTool={() => {}} // Not used
-                  onStopDrawingTool={() => {}} // Not used
-                  onClearDrawnFeatures={() => {}} // Not used
-                  onSaveDrawnFeaturesAsKML={() => {}} // Not used
-                  isFetchingOSM={false} // Not used
-                  onFetchOSMDataTrigger={() => {}} // Not used
-                  osmCategoriesForSelection={[]} // Not used
-                  selectedOSMCategoryIds={[]} // Not used
-                  onSelectedOSMCategoriesChange={() => {}} // Not used
-                  downloadFormat={downloadFormat} // Not used
-                  onDownloadFormatChange={() => {}} // Not used
-                  onDownloadOSMLayers={() => {}} // Not used
-                  isDownloading={false} // Not used
+                  isInspectModeActive={false} 
+                  onToggleInspectMode={() => {}} 
+                  selectedFeatureAttributes={null} 
+                  onClearSelectedFeature={() => {}} 
+                  activeDrawTool={null} 
+                  onToggleDrawingTool={() => {}} 
+                  onStopDrawingTool={() => {}} 
+                  onClearDrawnFeatures={() => {}} 
+                  onSaveDrawnFeaturesAsKML={() => {}} 
+                  isFetchingOSM={false} 
+                  onFetchOSMDataTrigger={() => {}} 
+                  osmCategoriesForSelection={[]} 
+                  selectedOSMCategoryIds={[]} 
+                  onSelectedOSMCategoriesChange={() => {}} 
+                  downloadFormat={downloadFormat} 
+                  onDownloadFormatChange={() => {}} 
+                  onDownloadOSMLayers={() => {}} 
+                  isDownloading={false} 
               />
             </div>
           )}
@@ -772,7 +789,7 @@ export default function GeoMapperClient() {
         >
           <div
             className="p-2 bg-gray-700/80 flex items-center justify-between cursor-grab rounded-t-lg"
-            onMouseDown={handleToolsPanelMouseDown}
+            onMouseDown={(e) => handlePanelMouseDown(e, 'tools')}
           >
             <h2 className="text-sm font-semibold">Herramientas del Mapa</h2>
             <Button variant="ghost" size="icon" onClick={toggleToolsPanelCollapse} className="h-6 w-6 text-white hover:bg-gray-600/80">
@@ -785,7 +802,7 @@ export default function GeoMapperClient() {
             <div className="flex-1 min-h-0 bg-transparent" style={{ maxHeight: 'calc(100vh - 120px)' }}>
               <MapControls
                   renderConfig={toolsPanelRenderConfig}
-                  onAddLayer={addLayer} // Still needed if tools panel allows direct layer add
+                  onAddLayer={addLayer} 
                   isInspectModeActive={isInspectModeActive}
                   onToggleInspectMode={() => setIsInspectModeActive(!isInspectModeActive)}
                   selectedFeatureAttributes={selectedFeatureAttributes}
@@ -804,7 +821,9 @@ export default function GeoMapperClient() {
                   onDownloadFormatChange={setDownloadFormat}
                   onDownloadOSMLayers={handleDownloadOSMLayers}
                   isDownloading={isDownloading}
-                  // Props not relevant for tools panel, or handled by layers panel
+                  availableBaseLayers={[]}
+                  activeBaseLayerId={""}
+                  onChangeBaseLayer={() => {}}
                   layers={[]} 
                   onToggleLayerVisibility={() => {}}
                   onRemoveLayer={() => {}}
@@ -819,3 +838,7 @@ export default function GeoMapperClient() {
     </div>
   );
 }
+
+
+    
+    
